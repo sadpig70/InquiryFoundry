@@ -1029,16 +1029,104 @@ def command_recover(args: argparse.Namespace) -> int:
             audit.record(root, "oa", audit_payload)
         emit({"event": event, "lwar_id": args.lwar_id, **outcome})
         return 0 if outcome["accepted"] else 2
+    if args.reclaim_unadopted:
+        if not args.lwar_id or not args.instance_id or args.generation is None:
+            raise SystemExit(
+                "--reclaim-unadopted requires --lwar-id, --instance-id, and --generation"
+            )
+        if args.unadopted_after is None or args.unadopted_after <= 0:
+            raise SystemExit("--reclaim-unadopted requires a positive --unadopted-after")
+        if not args.reason:
+            raise SystemExit("--reclaim-unadopted requires --reason")
+        service = RegistryService(root)
+        outcome = service.reclaim_unadopted(
+            args.lwar_id,
+            args.instance_id,
+            args.generation,
+            args.unadopted_after,
+            args.reason,
+        )
+        audit_operation = (
+            f"unadopted-reclaim:{args.lwar_id}:{args.instance_id}:{args.generation}"
+        )
+        if outcome.get("unadopted_confirmed"):
+            audit.record_once(
+                root,
+                "oa",
+                {
+                    "event": "unadopted_identity_confirmed",
+                    "lwar_id": args.lwar_id,
+                    "instance_id": args.instance_id,
+                    "generation": args.generation,
+                    "approval_age_s": outcome.get("approval_age_s"),
+                    "unadopted_after_s": args.unadopted_after,
+                },
+                f"{audit_operation}:unadopted_identity_confirmed",
+            )
+        event = "unadopted_slot_reclaimed" if outcome["accepted"] else "unadopted_slot_reclaim_rejected"
+        audit_payload = {
+            "event": event,
+            "lwar_id": args.lwar_id,
+            "instance_id": args.instance_id,
+            "generation": args.generation,
+            "approval_age_s": outcome.get("approval_age_s"),
+            "unadopted_after_s": args.unadopted_after,
+            "reason": None if outcome["accepted"] else outcome.get("reason"),
+            "operator_reason": args.reason,
+            "active_work": outcome.get("active_work", {}),
+        }
+        if outcome["accepted"]:
+            audit.record_once(root, "oa", audit_payload, f"{audit_operation}:{event}")
+        else:
+            audit.record(root, "oa", audit_payload)
+        emit({"event": event, "lwar_id": args.lwar_id, **outcome})
+        return 0 if outcome["accepted"] else 2
+    if args.expire_controls:
+        if not args.lwar_id or not args.instance_id or args.generation is None:
+            raise SystemExit(
+                "--expire-controls requires --lwar-id, --instance-id, and --generation"
+            )
+        if args.control_older_than is None or args.control_older_than <= 0:
+            raise SystemExit("--expire-controls requires a positive --control-older-than")
+        if not args.reason:
+            raise SystemExit("--expire-controls requires --reason")
+        service = RegistryService(root)
+        outcome = service.expire_pending_control(
+            args.lwar_id,
+            args.instance_id,
+            args.generation,
+            args.control_older_than,
+            args.reason,
+        )
+        event = "pending_controls_expired" if outcome["accepted"] else "pending_control_expiry_rejected"
+        audit.record(
+            root,
+            "oa",
+            {
+                "event": event,
+                "lwar_id": args.lwar_id,
+                "instance_id": args.instance_id,
+                "generation": args.generation,
+                "older_than_s": args.control_older_than,
+                "reason": None if outcome["accepted"] else outcome.get("reason"),
+                "operator_reason": args.reason,
+                "expired": outcome.get("expired", []),
+            },
+        )
+        emit({"event": event, "lwar_id": args.lwar_id, **outcome})
+        return 0 if outcome["accepted"] else 2
     if (
         args.instance_id
         or args.generation is not None
         or args.expected_last_seen
         or args.stale_after is not None
+        or args.unadopted_after is not None
+        or args.control_older_than is not None
         or args.reason
     ):
         raise SystemExit(
-            "identity and stale-retirement arguments require "
-            "--reap-startup or --retire-stale"
+            "identity and slot-reclaim arguments require --reap-startup, "
+            "--retire-stale, --reclaim-unadopted, or --expire-controls"
         )
     if args.delivery_timeout <= 0:
         raise SystemExit("--delivery-timeout must be positive")
@@ -1961,11 +2049,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="retire one exact stale idle slot using observed heartbeat fencing",
     )
+    recovery_mode.add_argument(
+        "--reclaim-unadopted",
+        action="store_true",
+        help="reclaim one approved slot whose identity was never adopted",
+    )
+    recovery_mode.add_argument(
+        "--expire-controls",
+        action="store_true",
+        help="expire pending controls left in front of a dead watcher",
+    )
     recover.add_argument("--instance-id")
     recover.add_argument("--generation", type=int)
     recover.add_argument("--startup-deadline", type=float, default=STARTUP_DEADLINE_S_DEFAULT)
     recover.add_argument("--expected-last-seen")
     recover.add_argument("--stale-after", type=float)
+    recover.add_argument("--unadopted-after", type=float)
+    recover.add_argument("--control-older-than", type=float)
     recover.add_argument("--reason")
     recover.add_argument(
         "--delivery-timeout",

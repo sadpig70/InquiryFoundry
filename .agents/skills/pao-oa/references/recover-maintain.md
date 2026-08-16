@@ -8,6 +8,8 @@ Replace `<PAO_SKILL>` with this skill's folder (SKILL.md §0).
 python "<PAO_SKILL>/scripts/oa.py" recover --delivery-timeout 300
 python "<PAO_SKILL>/scripts/oa.py" recover --reap-startup --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --startup-deadline 30
 python "<PAO_SKILL>/scripts/oa.py" recover --retire-stale --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --expected-last-seen TIMESTAMP --stale-after 120 --reason "replace failed provider generation"
+python "<PAO_SKILL>/scripts/oa.py" recover --reclaim-unadopted --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --unadopted-after 3600 --reason "approved registration never adopted"
+python "<PAO_SKILL>/scripts/oa.py" recover --expire-controls --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --control-older-than 600 --reason "control published to a watcher that never returned"
 python "<PAO_SKILL>/scripts/oa.py" dead
 python "<PAO_SKILL>/scripts/oa.py" dead --lwar-id LWAR1 --requeue TASK_ID
 ```
@@ -66,6 +68,36 @@ python "<PAO_SKILL>/scripts/oa.py" dead --lwar-id LWAR1 --requeue TASK_ID
   reason, preserves registry/tombstone bytes, and restores only missing
   deterministic `stale_identity_confirmed` and `stale_slot_retired` audit
   events. Never use this command to replace an active or uncertain runtime.
+- `recover --reclaim-unadopted` is the third fenced slot path, for a slot that
+  `reconcile` approved but whose LWAR never adopted the identity
+  (`runtime_status=registered_not_started` with no current-generation
+  heartbeat). Adoption is what writes the first heartbeat, so `retire-stale` and
+  `reap-startup` — which each require one — can never reach this state; both
+  refuse it as `heartbeat_identity_mismatch`. Take `lwar_id`, `instance_id`, and
+  `generation` from one current `status`, and give `--unadopted-after` in
+  seconds (measured from the slot's `registered_at`) plus an operator
+  `--reason`. Under the registry lock the command re-checks the tuple, refuses a
+  slot whose state is not `on`/`draining`/`off`, refuses **any** readable
+  heartbeat bound to that exact identity (`identity_already_adopted` — that slot
+  belongs to the other two paths), refuses an approval younger than the
+  threshold (`approval_too_recent`), and refuses non-empty incoming, claimed,
+  lease, outgoing, control, or control-claimed channels. A leftover heartbeat
+  from an **earlier** generation is correctly not treated as adoption evidence.
+  It then commits a generation-preserving tombstone (`retirement_mode:
+  unadopted_reap`) before removing the slot; an exact replay returns
+  `already_reclaimed` without a second version increment. Approval-side orphans
+  are OA's to clear — an LWAR never withdraws its own pending registration.
+- `recover --expire-controls` clears controls that can no longer be delivered.
+  A control is consumed by the watcher, so one published to a runtime that never
+  returns is never claimed; `prune` does not touch pending `control/`, and
+  `retire-stale` requires it to be empty. A `shutdown` sent to stop a dead
+  watcher therefore blocks reclaiming its own slot. The command re-checks the
+  identity tuple, refuses a slot whose matching heartbeat is fresher than
+  `--control-older-than` (`watcher_alive`), and expires only controls older than
+  that threshold. Original bytes are preserved: each control is moved unchanged
+  into `archive/control/` beside a `.expired.json` sidecar recording the
+  command, age, threshold, and operator reason. Run it before `retire-stale`
+  when that command reports `active_work: {"control": N}`.
 - Every mutating OA command holds the same command-wide process lock. Therefore
   a concurrent `send` cannot publish from a stale registry observation while
   startup reaping commits; one command completes before the other revalidates.

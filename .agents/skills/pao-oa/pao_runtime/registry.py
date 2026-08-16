@@ -255,6 +255,290 @@ class RegistryService:
                 "active_work": {},
             }
 
+    def reclaim_unadopted(
+        self,
+        lwar_id: str,
+        instance_id: str,
+        generation: int,
+        unadopted_after_s: float,
+        reason: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Reclaim one approved slot whose identity was never adopted.
+
+        Adoption is what writes the first current-generation heartbeat, so both
+        `retire_stale` and `reap_startup` — which each require one — are
+        structurally unreachable for a slot that never started. This is the
+        fenced path for exactly that state, and it refuses any slot that shows
+        evidence of having started.
+        """
+        lwar_id = validate_lwar_id(lwar_id)
+        instance_id = validate_instance_id(instance_id)
+        if generation <= 0:
+            raise ValueError("generation must be positive")
+        if unadopted_after_s <= 0:
+            raise ValueError("unadopted threshold must be positive")
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("reclaim reason must be non-empty")
+        if len(reason) > 500:
+            raise ValueError("reclaim reason must be at most 500 characters")
+        observed_at = now or datetime.now(timezone.utc)
+
+        with FileLock(self.lock_path):
+            registry = self.load_registry()
+            tombstones = self.load_tombstones()
+            slot = registry["slots"].get(lwar_id)
+            tombstone = tombstones["entries"].get(lwar_id)
+
+            if slot is None:
+                already_reclaimed = bool(
+                    tombstone
+                    and tombstone.get("instance_id") == instance_id
+                    and tombstone.get("last_generation") == generation
+                    and tombstone.get("retirement_mode") == "unadopted_reap"
+                    and tombstone.get("retirement_reason") == reason
+                    and tombstone.get("unadopted_after_s") == unadopted_after_s
+                )
+                return {
+                    "accepted": already_reclaimed,
+                    "reason": "already_reclaimed" if already_reclaimed else "lwar_not_registered",
+                    "unadopted_confirmed": already_reclaimed,
+                    "approval_age_s": (
+                        tombstone.get("approval_age_s") if already_reclaimed else None
+                    ),
+                    "registry_version": registry["registry_version"],
+                    "active_work": {},
+                }
+            if slot.get("instance_id") != instance_id or slot.get("generation") != generation:
+                return {
+                    "accepted": False,
+                    "reason": "identity_mismatch",
+                    "unadopted_confirmed": False,
+                    "approval_age_s": None,
+                    "registry_version": registry["registry_version"],
+                    "active_work": {},
+                }
+            if slot.get("state") not in {"on", "draining", "off"}:
+                return {
+                    "accepted": False,
+                    "reason": "registry_state_not_retirable",
+                    "unadopted_confirmed": False,
+                    "approval_age_s": None,
+                    "registry_version": registry["registry_version"],
+                    "active_work": {},
+                }
+
+            # Adoption fence. Any readable heartbeat bound to this exact
+            # identity proves the runtime did start; that slot belongs to
+            # retire_stale or reap_startup, never here.
+            heartbeat_path = self.root / "mailbox" / lwar_id / "heartbeat.json"
+            heartbeat = safe_load_json(heartbeat_path) if heartbeat_path.is_file() else None
+            try:
+                if heartbeat is not None:
+                    validate_contract(heartbeat, "heartbeat.schema.json")
+            except ValueError:
+                heartbeat = None
+            if (
+                heartbeat is not None
+                and heartbeat.get("instance_id") == instance_id
+                and heartbeat.get("generation") == generation
+            ):
+                return {
+                    "accepted": False,
+                    "reason": "identity_already_adopted",
+                    "unadopted_confirmed": False,
+                    "approval_age_s": None,
+                    "registry_version": registry["registry_version"],
+                    "active_work": {},
+                }
+
+            try:
+                approval_age_s = max(
+                    0.0,
+                    (observed_at - parse_utc(slot["registered_at"])).total_seconds(),
+                )
+            except (KeyError, TypeError, ValueError):
+                return {
+                    "accepted": False,
+                    "reason": "registered_at_missing_or_invalid",
+                    "unadopted_confirmed": False,
+                    "approval_age_s": None,
+                    "registry_version": registry["registry_version"],
+                    "active_work": {},
+                }
+            if approval_age_s <= unadopted_after_s:
+                return {
+                    "accepted": False,
+                    "reason": "approval_too_recent",
+                    "unadopted_confirmed": False,
+                    "approval_age_s": approval_age_s,
+                    "registry_version": registry["registry_version"],
+                    "active_work": {},
+                }
+
+            active_work = self._active_mailbox_work(lwar_id)
+            if active_work:
+                return {
+                    "accepted": False,
+                    "reason": "active_mailbox_work",
+                    "unadopted_confirmed": True,
+                    "approval_age_s": approval_age_s,
+                    "registry_version": registry["registry_version"],
+                    "active_work": active_work,
+                }
+
+            registry["registry_version"] = int(registry["registry_version"]) + 1
+            registry["updated_at"] = utc_now()
+            del registry["slots"][lwar_id]
+            reusable_after = observed_at + timedelta(seconds=self.tombstone_retention_s)
+            tombstones["entries"][lwar_id] = {
+                "last_generation": generation,
+                "instance_id": instance_id,
+                "deregistered_at": utc_now(),
+                "reusable_after": reusable_after.isoformat().replace("+00:00", "Z"),
+                "retirement_mode": "unadopted_reap",
+                "retirement_reason": reason,
+                "unadopted_after_s": unadopted_after_s,
+                "approval_age_s": approval_age_s,
+            }
+            tombstones["updated_at"] = utc_now()
+            # Tombstone first, exactly as the other two reclaim paths: an
+            # interruption may leave the slot occupied but never unfenced.
+            atomic_write_json(self.tombstones_path, tombstones)
+            atomic_write_json(self.registry_path, registry)
+            return {
+                "accepted": True,
+                "reason": None,
+                "unadopted_confirmed": True,
+                "approval_age_s": approval_age_s,
+                "registry_version": registry["registry_version"],
+                "active_work": {},
+            }
+
+    def expire_pending_control(
+        self,
+        lwar_id: str,
+        instance_id: str,
+        generation: int,
+        older_than_s: float,
+        reason: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Expire controls left undeliverable in front of a dead watcher.
+
+        A control is claimed by the watcher, so one published to a runtime that
+        never comes back is never consumed. `prune` does not touch pending
+        `control/`, and `retire_stale` requires it to be empty, so a `shutdown`
+        sent to stop a watcher can permanently block reclaiming its slot.
+
+        The original bytes are preserved: each control is moved unchanged into
+        `archive/control/` next to a `.expired.json` sidecar recording why.
+        """
+        lwar_id = validate_lwar_id(lwar_id)
+        instance_id = validate_instance_id(instance_id)
+        if generation <= 0:
+            raise ValueError("generation must be positive")
+        if older_than_s <= 0:
+            raise ValueError("control expiry threshold must be positive")
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("expiry reason must be non-empty")
+        if len(reason) > 500:
+            raise ValueError("expiry reason must be at most 500 characters")
+        observed_at = now or datetime.now(timezone.utc)
+
+        with FileLock(self.lock_path):
+            registry = self.load_registry()
+            slot = registry["slots"].get(lwar_id)
+            if slot is None:
+                return {"accepted": False, "reason": "lwar_not_registered", "expired": []}
+            if slot.get("instance_id") != instance_id or slot.get("generation") != generation:
+                return {"accepted": False, "reason": "identity_mismatch", "expired": []}
+
+            # Liveness fence: a watcher whose heartbeat is fresh will still
+            # claim these controls, so expiring them would drop real delivery.
+            heartbeat_path = self.root / "mailbox" / lwar_id / "heartbeat.json"
+            heartbeat = safe_load_json(heartbeat_path) if heartbeat_path.is_file() else None
+            try:
+                if heartbeat is not None:
+                    validate_contract(heartbeat, "heartbeat.schema.json")
+            except ValueError:
+                heartbeat = None
+            if (
+                heartbeat is not None
+                and heartbeat.get("instance_id") == instance_id
+                and heartbeat.get("generation") == generation
+            ):
+                try:
+                    heartbeat_age_s = max(
+                        0.0,
+                        (observed_at - parse_utc(heartbeat["last_seen"])).total_seconds(),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    heartbeat_age_s = None
+                if heartbeat_age_s is None or heartbeat_age_s <= older_than_s:
+                    return {
+                        "accepted": False,
+                        "reason": "watcher_alive",
+                        "heartbeat_age_s": heartbeat_age_s,
+                        "expired": [],
+                    }
+
+            control_dir = self.root / "mailbox" / lwar_id / "control"
+            archive_dir = self.root / "mailbox" / lwar_id / "archive" / "control"
+            expired: list[dict[str, Any]] = []
+            skipped: list[dict[str, Any]] = []
+            for path in sorted(control_dir.glob("*.json")):
+                if not path.is_file():
+                    continue
+                try:
+                    age_s = max(
+                        0.0,
+                        (
+                            observed_at
+                            - datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                        ).total_seconds(),
+                    )
+                except OSError:
+                    continue
+                if age_s <= older_than_s:
+                    skipped.append({"file": path.name, "age_s": age_s, "reason": "too_recent"})
+                    continue
+                control = safe_load_json(path)
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                sidecar = archive_dir / f"{path.stem}.expired.json"
+                atomic_write_json(
+                    sidecar,
+                    {
+                        "schema_version": "pao.control-expiry.v1",
+                        "lwar_id": lwar_id,
+                        "instance_id": instance_id,
+                        "generation": generation,
+                        "control_id": (control or {}).get("control_id"),
+                        "command": (control or {}).get("command"),
+                        "control_age_s": age_s,
+                        "older_than_s": older_than_s,
+                        "expiry_reason": reason,
+                        "expired_at": utc_now(),
+                    },
+                )
+                os.replace(path, archive_dir / path.name)
+                expired.append(
+                    {
+                        "file": path.name,
+                        "control_id": (control or {}).get("control_id"),
+                        "command": (control or {}).get("command"),
+                        "age_s": age_s,
+                    }
+                )
+            return {
+                "accepted": True,
+                "reason": None,
+                "expired": expired,
+                "skipped": skipped,
+            }
+
     def reap_startup(
         self,
         lwar_id: str,
