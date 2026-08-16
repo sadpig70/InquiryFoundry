@@ -1,0 +1,12 @@
+local_id: LWAR1-01
+question_id: Q-20260814-0001
+examiner: LWAR2
+attacks:
+  - {dtype: evidence, attack: a, result: miss, rationale: r, kill_rule: null}
+  - {dtype: logic, attack: a, result: miss, rationale: r, kill_rule: null}
+  - {dtype: premise, attack: a, result: miss, rationale: r, kill_rule: null}
+  - {dtype: alternative, attack: a, result: miss, rationale: r, kill_rule: null}
+  - {dtype: stakeholder, attack: a, result: miss, rationale: r, kill_rule: null}
+  - {dtype: execution, attack: a, result: miss, rationale: r, kill_rule: null}
+kill_count: 0
+verdict: SURVIVED

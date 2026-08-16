@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "required": [
+    "run_id",
+    "mode",
+    "seed_count",
+    "qo_count"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "normal",
+        "ablation"
+      ]
+    },
+    "separation": {
+      "enum": [
+        "full",
+        "ablation"
+      ]
+    },
+    "protocol_valid": {
+      "type": "boolean"
+    },
+    "hypothesis_valid": {
+      "type": "boolean"
+    },
+    "seed_count": {
+      "type": "integer"
+    },
+    "qo_count": {
+      "type": "integer"
+    },
+    "scored_count": {
+      "type": "integer"
+    },
+    "human": {
+      "type": "string"
+    },
+    "dissent_referenced": {
+      "type": "boolean"
+    },
+    "slo_scored_ge_8": {
+      "type": "boolean"
+    },
+    "contributing_generate_lwars": {
+      "type": "integer"
+    },
+    "observed_statuses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decided": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

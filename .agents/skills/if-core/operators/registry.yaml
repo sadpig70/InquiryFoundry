@@ -1,0 +1,16 @@
+operators:
+  - {id: OP-CONTRA, name: Contradiction, template: "A와 B가 동시에 참일 수 없는 이유는?"}
+  - {id: OP-INVERT, name: AssumptionInversion, template: "A의 핵심 가정이 거짓이면 무엇이 일어나는가?"}
+  - {id: OP-BOUND, name: Boundary, template: "A는 어떤 조건에서 더 이상 성립하지 않는가?"}
+  - {id: OP-SCALE, name: Scaling, template: "A가 규모 1000배가 되면 어떤 새 현상이 나타나는가?"}
+  - {id: OP-XDOM, name: CrossDomain, template: "타 영역 원리 X를 A에 적용하면?"}
+  - {id: OP-MISSVAR, name: MissingVariable, template: "현재 설명이 빠뜨린 변수는?"}
+  - {id: OP-CAUSAL, name: Causal, template: "A-B 상관을 만드는 실제 원인은?"}
+  - {id: OP-MEASURE, name: Measurement, template: "A를 잘못 측정하고 있지는 않은가?"}
+  - {id: OP-CF, name: Counterfactual, template: "A가 없었다면 B는 발생했는가?"}
+  - {id: OP-2ND, name: SecondOrder, template: "A 성공의 2차 효과는?"}
+  - {id: OP-ADV, name: Adversarial, template: "A를 실패시키는 가장 싼 방법은?"}
+  - {id: OP-REGIME, name: RegimeChange, template: "환경이 바뀌면 기존 규칙은 언제 역전되는가?"}
+meta:
+  discovery_allowed: true
+  worker_may_edit_registry: false

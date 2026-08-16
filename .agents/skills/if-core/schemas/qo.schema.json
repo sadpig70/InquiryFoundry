@@ -1,0 +1,321 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "local_id",
+    "question_id",
+    "question",
+    "question_norm",
+    "question_class",
+    "operator",
+    "unknown_type",
+    "unknown_ref",
+    "evidence",
+    "lineage",
+    "version",
+    "status",
+    "contradictions",
+    "estimated_cost",
+    "scores",
+    "gate_results",
+    "dissent",
+    "human_review",
+    "created_at",
+    "last_verified_at"
+  ],
+  "properties": {
+    "local_id": {
+      "type": "string"
+    },
+    "question_id": {
+      "type": "string"
+    },
+    "question": {
+      "type": "string"
+    },
+    "question_norm": {
+      "type": "string"
+    },
+    "question_class": {
+      "enum": [
+        "phenomenon",
+        "cause",
+        "scenario",
+        "design",
+        "normative",
+        "meta"
+      ]
+    },
+    "operator": {
+      "enum": [
+        "OP-CONTRA",
+        "OP-INVERT",
+        "OP-BOUND",
+        "OP-SCALE",
+        "OP-XDOM",
+        "OP-MISSVAR",
+        "OP-CAUSAL",
+        "OP-MEASURE",
+        "OP-CF",
+        "OP-2ND",
+        "OP-ADV",
+        "OP-REGIME"
+      ]
+    },
+    "unknown_type": {
+      "enum": [
+        "known_unknown",
+        "contradictory",
+        "hidden_assumption",
+        "measurement",
+        "causal",
+        "boundary",
+        "cross_domain_gap",
+        "temporal",
+        "emergent",
+        "unknown_unknown_candidate"
+      ]
+    },
+    "unknown_ref": {
+      "type": "string"
+    },
+    "target_concepts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "why_matters": {
+      "type": "string"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "claim",
+          "confidence"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "falsifier": {
+      "type": "string"
+    },
+    "minimal_test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "variable",
+        "comparison",
+        "reject_if"
+      ],
+      "properties": {
+        "variable": {
+          "type": "string"
+        },
+        "comparison": {
+          "type": "string"
+        },
+        "reject_if": {
+          "type": "string"
+        }
+      }
+    },
+    "action_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "data",
+        "metric",
+        "criterion"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "observe",
+            "experiment",
+            "data",
+            "simulation"
+          ]
+        },
+        "data": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "criterion": {
+          "type": "string"
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generated_by",
+        "evidence_kind",
+        "objective",
+        "run_id",
+        "parents",
+        "domain"
+      ],
+      "properties": {
+        "generated_by": {
+          "type": "string"
+        },
+        "evidence_kind": {
+          "enum": [
+            "papers",
+            "patents",
+            "code",
+            "news",
+            "failures",
+            "regulation",
+            "history"
+          ]
+        },
+        "objective": {
+          "enum": [
+            "importance_max",
+            "consensus_falsify",
+            "info_per_cost"
+          ]
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "domain": {
+          "type": "string"
+        }
+      }
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "SCORED",
+        "REVIEWED",
+        "ADOPTED",
+        "REJECTED",
+        "DEFERRED",
+        "MERGED",
+        "DORMANT",
+        "QUARANTINE"
+      ]
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "estimated_cost": {
+      "type": "string"
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "impact": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "testability": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "grounding": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "actionability": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "gate_results": {
+      "type": "object"
+    },
+    "dissent": {
+      "type": "array"
+    },
+    "human_review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reviewer",
+        "note"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "reviewer": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "last_verified_at": {
+      "type": "string"
+    },
+    "derived_from": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

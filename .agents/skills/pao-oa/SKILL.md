@@ -1,0 +1,280 @@
+---
+name: pao-oa
+description: "PAO Orchestration Agent (standalone, self-contained) — autonomously bootstrap and act as OA: approve LWAR registrations, publish mailbox tasks, collect and semantically validate results, recover failures. Bundles the PAO runtime; installs by folder copy alone — no pip or plugin. Load on /pao-oa or whenever a session is told to act as the PAO OA."
+user-invocable: true
+argument-hint: "start | info | doctor | presence | status | audit-health | audit-repair | audit-prune-resolve | audit-preserve-release | reconcile | send | collect | validate | routing-circuit-reset | workflow-status | recover | dead | control | prune"
+---
+
+# PAO-OA Skill v1.37 (standalone)
+
+## Definitions
+
+- **PAO** — Persistent Agent Orchestration: local orchestration of long-running AI runtimes over a file bus.
+- **OA** — Orchestration Agent: this role. OA does not launch LWARs; it approves registrations, publishes mailbox tasks, and validates and integrates results. Long-running execution is owned by each LWAR's ADP.
+- **LWAR** — Long-running Worker Agent Runtime: the stable execution identity (`LWAR1`, `LWAR2`, ...) that hides provider and model names.
+- **ADP** — LWAR-side official loop (`lwar.py adp`: resident, exit on event or 50m, then the LWAR restarts it). After the operator's one-time `/pao-lwar`, OA talks to that LWAR **only** through the mailbox (`send` / `control` / `collect`). Do not ask the operator to paste instructions into an LWAR chat.
+- **TaskContract / ResultContract** — the task and result JSON payloads; schemas live in [schemas/](schemas/).
+
+## 0. Self-Contained Invocation
+
+This skill bundles the full PAO runtime (`scripts/`, `pao_runtime/`, `schemas/`). In every command, replace the placeholder `<PAO_SKILL>` with the **absolute path of the folder containing this SKILL.md**. It is a documentation placeholder, not an environment variable — never pass it to a shell unresolved, and always quote the substituted path.
+
+```bash
+python "<PAO_SKILL>/scripts/oa.py" status
+```
+
+Bus root resolution: explicit `--root` > `PAO_ROOT` environment variable > a **`.pao/` folder under the current directory** (the default). The `.pao/` default keeps all PAO state (`mailbox/`, `var/`, `control/`) in one hidden folder instead of scattering it across the project workspace — add `.pao/` to `.gitignore`. For a central bus shared across projects, set `PAO_ROOT` once per machine (outside any skills directory) and omit `--root`. The bus assumes a **single-host local filesystem** (atomic rename semantics are not guaranteed on NFS/SMB shares). Run commands with the current runtime's Python executable — do not assume `python` and `python3` resolve to the same interpreter. Diagnose version and root resolution with `python "<PAO_SKILL>/scripts/pao.py" info`.
+
+Before the first orchestration action of a session, run the pre-flight check and stop on failure:
+
+```bash
+python "<PAO_SKILL>/scripts/pao.py" doctor --role oa
+```
+
+Runtime protocol v1.4.2 intentionally rejects optional-first pre-v1 records
+and pre-execution-fence bundles.
+Use a fresh bus for the major-version cutover, or intentionally retire the old
+bus after preserving required evidence. Never bypass a failed
+`v1_bus_contract` doctor check by editing registry or mailbox JSON.
+
+### Default autonomous invocation
+
+If the instruction is only "read this skill and act as the PAO OA", or `/pao-oa`
+is invoked with no action, treat that as an executable `start` command. Do not
+summarize this skill, ask for a second bootstrap prompt, or wait for the operator
+to restate the procedure. Resolve `<PAO_SKILL>` from this `SKILL.md`, establish
+the session identity and bus described below, read the bundled references needed
+for the actions you are about to take, and execute the Session Bootstrap.
+
+The files under this skill folder are the complete operating contract. No
+repository README, external bootstrap guide, plugin, pip package, or vendor-
+specific prompt is required. Environmental prerequisites are limited to the
+current Python interpreter and one local bus selected by `--root`, `PAO_ROOT`, or
+the `<cwd>/.pao` default. If doctor fails, report that exact environmental
+blocker; do not replace execution with a tutorial.
+
+## 0.5 Session Bootstrap (cold start)
+
+At the start of an OA session, before any mutating action:
+
+```text
+1. Resolve <PAO_SKILL> from this file and resolve the bus by the §0 precedence.
+2. If PAO_OA_ID is absent, mint a unique `oa-<random>` id yourself and retain
+   that exact value for every mutating command in this session. Never ask the
+   user to invent it for you.
+3. Read reconcile.md in full, then run doctor --role oa. Unhealthy → stop and
+   report the exact check; do not mutate the bus.
+4. Run `presence`, then reconcile and status. Presence makes this active OA
+   observable to LWARs; reconcile approves pending identity/lifecycle requests.
+5. Read the other bundled references before their first actions. Enter the OA
+   supervision cadence: presence → reconcile → status → collect/validate →
+   recover. Target a presence refresh every 25 seconds and never exceed the
+   30-second hard-latest contract while supervising. Track the next deadline
+   from the last successful refresh; do not sleep a fixed interval after work.
+6. If the user supplied a goal, Plan → send → Monitor → collect → validate →
+   recover. If no goal was supplied, do not invent tasks: supervise existing bus
+   work and remain available for a goal.
+```
+
+While any workflow is non-terminal, continue the light supervision cadence until
+it becomes terminal, an operator stops the OA, or a genuine blocker requires a
+decision. An empty bus is an idle OA, not permission to fabricate work.
+
+## 1. Single-Writer Rule
+
+Exactly one OA session should mutate the bus at a time. At session start, reuse a
+known id handed off from the same OA session; otherwise mint a unique id yourself
+and keep it unchanged for the entire session. Do not ask the user to choose it.
+Examples (choose the form for your shell):
+
+```bash
+# bash / Git Bash
+export PAO_OA_ID="oa-$(python -c 'import uuid; print(uuid.uuid4().hex)')"
+```
+
+```powershell
+# PowerShell 7
+$env:PAO_OA_ID = "oa-$([guid]::NewGuid().ToString('N'))"
+```
+
+Every mutating command (`presence`, `reconcile`, `send`, `control`, `collect`, `recover`, `dead --requeue`, `validate --record`, `routing-circuit-reset`, `prune`, `audit-repair`, `audit-prune-resolve`, `audit-preserve-release`) requires `PAO_OA_ID`, holds the writer lease at `var/oa/writer_lease.json`, and renews it while the command runs. A separate process-wide command mutex at `var/oa/.command.lock` serializes the complete mutation, including two processes that reuse the same `PAO_OA_ID`; contention waits up to 30 seconds and then fails closed. It also publishes `var/oa/presence.json`; long commands use monotonic fixed-rate deadlines with a 25-second target and a 30-second hard latest. Presence expires after 90 seconds and is the only OA-liveness signal LWARs use. The 900-second writer lease is fencing, **not liveness**, and is not the command mutex. A missing id fails closed; a session holding a different id is rejected as a read-only observer until the lease expires. Read commands (`status`, `audit-health`, plain `validate`, `workflow-status`, `dead` listing, `info`) never acquire either OA mutation guard.
+
+For the agent-level supervision loop, maintain `next_presence_deadline` from the
+monotonic time of each successful presence-publishing command. Set it to
+`last_success + 25s`; before any idle wait or non-mutating monitoring step,
+refresh immediately when due and otherwise cap the wait to the remaining time.
+Recompute the remaining budget after reconcile, status, collection, reasoning,
+and every other foreground step; never start a fresh interval from cycle
+completion. Never implement the cadence as `do work -> sleep 30s`.
+
+**On a writer-lease rejection**: first confirm no other live OA is actually running (check `status` and heartbeats, ask the operator). If the holder is a crashed prior session, either wait out the TTL (≤900s) or re-run once the lease has expired; if it is your own prior id, re-export the **same** `PAO_OA_ID`. Never hand-edit or delete `writer_lease.json` (or any bus file) to force a mutation — that defeats the guard and can corrupt concurrent state.
+
+**On a command-lock timeout**: do not delete `.command.lock`. Confirm whether a
+same-ID command is still running, then retry after it exits. On POSIX and
+Windows, the bundled lock protocol checks the recorded PID and reclaims a lock
+only when it is older than 30 seconds and its owner is no longer alive. Manual
+deletion can grant two writers.
+
+## 2. Core Loop
+
+```text
+OA // PAO supervising agent
+    Reconcile // approve registration and lifecycle requests
+    Plan // decompose goals into TaskContracts
+    Publish // atomically publish to active LWAR mailboxes @dep:Plan
+    Monitor // watch heartbeat, lease, and results @dep:Publish
+    Validate // verify result evidence @dep:Monitor
+    Recover // requeue, reassign, or dead-letter on failure @dep:Validate
+```
+
+Recovery is not a final step only: on any detected inconsistency (stale lease, crash, quarantine, duplicate), reconcile authoritative state first, then resume the loop.
+
+When `status` reports `startup_deadline_missed=true`, do not delete bus files or
+route work to that slot. Copy the exact current `lwar_id`, `instance_id`, and
+`generation` from that status result and use the fenced `recover
+--reap-startup` procedure in `recover-maintain.md`. It may reclaim only a
+matching, overdue `starting` identity with no active mailbox work.
+If that command is interrupted, retry the identical tuple after stale locks are
+automatically reclaimed. Tombstone-first commit ordering keeps the slot fenced,
+and the retry converges without generation duplication. If both state writes
+already committed before the interruption, replay leaves them byte-stable,
+returns `already_reaped`, and restores only missing audit records. Deterministic
+startup-reap audit keys prevent replay from duplicating events already present
+in the active log, rotated segments, or the degraded backlog. Repeated audit
+outages retain only one degraded entry per deterministic key. Post-flush crash
+recovery filters spool keys already committed to active or rotated logs.
+Active and degraded audit appends are flushed and `fsync`-committed before the
+runtime reports durability or deletes the spool.
+When a previously active runtime is stale and cannot complete clean retirement,
+do not impersonate it or edit the registry. If it has a valid matching
+non-running heartbeat and no active mailbox work, use the explicit
+`recover --retire-stale` procedure in `recover-maintain.md` with the exact
+current tuple, observed `last_seen`, stale threshold, and operator reason.
+Fresh, changed, starting, running, task-bearing, identity-mismatched, or
+work-bearing state fails closed.
+Audit pruning shares the append lock order and preserves rotated segments that
+still carry deterministic-key evidence referenced by the degraded spool.
+Deterministic append/replay fails closed when any active or rotated audit
+segment cannot be read completely; the pending event remains degraded.
+Strict JSONL validation auto-repairs only a crash-truncated final fragment in
+the mutable active/degraded file after durably quarantining its raw bytes.
+Use read-only `audit-health` to inspect blocked keyed append/replay, malformed
+segments, pending degraded records, and `.corrupt/` fragments before recovery.
+For terminated, interior, or rotated corruption, copy the segment SHA-256 and
+all malformed line numbers from the same diagnosis, then follow the guarded
+`audit-repair` procedure in `recover-maintain.md`. Never hand-edit or delete the
+segment: repair rejects fingerprint drift and valid-line deletion, preserves
+the original bytes, and installs only a fully valid JSON-object JSONL result.
+The runtime writes a `prepared -> replaced -> committed` repair receipt before
+changing the segment. If the command is interrupted, retry the exact same
+segment, original fingerprint, and line set; receipt/target reconciliation
+continues the missing replacement or audit step without duplicating evidence.
+Retention is equally fail-closed: `prune` deletes only old `committed` receipts
+whose audit key, backup, and repaired-or-consumed target state all agree.
+Incomplete, invalid, missing, or drifted repair evidence is permanently
+preserved until an operator resolves it.
+Eligible cleanup is crash-convergent: the runtime durably authorizes a
+`.repair-prune/` tombstone, removes the receipt, atomically stages the bound
+backup, records `backup_staged`, and removes the tombstone last. Retry `prune`
+after interruption; an authorized transaction resumes even when the new
+retention cutoff differs.
+Use read-only `audit-health` before maintenance when `.repair-prune/` evidence
+may exist. It enumerates `retention_tombstones`, classifies exact crash
+topologies as `resumable`, classifies uncertainty as `blocked` with
+`reason_codes`, and reports both aggregate counts. Retention blockage raises
+health to `attention`; it does not imply keyed audit append is blocked.
+`prune` also fences rotated audit evidence for every retention tombstone,
+including blocked transactions. It preserves the named rotated repair target
+and any segment containing the bound repair audit key. If any tombstone cannot
+be loaded strictly, rotated pruning removes nothing.
+Before deleting any otherwise eligible rotated segment, `prune` requires
+complete readable JSON-object JSONL. It preserves malformed, non-object,
+unreadable, metadata-inaccessible, and unlink-failed segments, and reports
+removed, protected, and blocked counts separately. `total` counts removals
+only. `audit_segment_outcomes` traces every counted segment to its
+bus-root-relative path, `removed|protected|blocked` status, and stable
+`reason_codes`. The same ordered list is recorded in the `pruned` audit event;
+its length equals the sum of the three aggregate counts.
+Rotated deletion is receipt-authorized before mutation. `.rotated-prune/`
+stores one strict pending run with its cutoff, per-segment decisions, and
+fingerprint witnesses. `prune` resumes that run before starting another,
+recognizes an authorized missing target as an already completed deletion, and
+blocks fingerprint drift as `segment_drifted`. The final `pruned` event is
+idempotent under `rotated-prune:<run_id>`; only confirmation of that key in the
+audit log permits receipt removal. Check `audit_prune_audit_committed`; `false`
+means the event is degraded and the receipt must be preserved for retry.
+`audit-health` inspects these receipts strictly read-only. It exposes
+`rotated_prune_receipts` plus resumable/blocked aggregate counts. Valid
+prepared/applied interruption states are `resumable`; invalid schema, multiple
+or unexpected entries, witness drift, unreadable/non-file targets, incomplete
+audit snapshots, and a target present after `applied` are `blocked` with stable
+`reason_codes`. These states raise health to `attention` but do not redefine
+`keyed_append_blocked`.
+For the specific blocked reason `applied_target_present`, use
+`audit-prune-resolve` with the exact run ID, receipt SHA-256, segment name,
+segment SHA-256, and `--decision preserve-recreated`. It never deletes the
+recreated segment. A fingerprint-bound `.rotated-preserve/` marker is durable
+first, then the receipt outcome becomes
+`operator_preserved_recreated_segment`. The command recovers the original
+deterministic `pruned` event, records an exact-once resolution event, and
+completes the receipt only after both keys and the preservation binding verify.
+Future `prune` reports `operator_preserved_target`. Invalid/multiple receipts
+and all fence drift are refused.
+Read-only `audit-health` additionally inspects `.rotated-preserve/` and reports
+`rotated_preservations`, `protected_rotated_preservation_count`, and
+`blocked_rotated_preservation_count`. A valid marker/target/two-key binding is
+`protected`; orphaned markers, target fingerprint drift, duplicate target
+claims, invalid entries, and missing original-prune or resolution audit keys
+are stable reason-coded `blocked` states. Both classifications raise health to
+`attention` without changing `keyed_append_blocked`. Do not delete blocked
+evidence manually.
+To retire a valid permanent protection, use `audit-preserve-release` with the
+exact run ID, segment, marker SHA-256, target SHA-256, and
+`--decision release-protection`. The command requires a currently protected
+marker/target/two-key binding with no duplicate target claim. It commits one
+strict deterministic release event before unlinking only the marker, then
+revalidates every fence. Audit failure preserves the marker; exact retry
+converges both before and after unlink. The segment is never deleted or
+modified by release and becomes eligible for a later normal `prune`.
+Read-only `audit-health` groups committed preservation-release evidence by its
+deterministic key. It reports `preservation_releases` and completed, resumable,
+and blocked counts. One valid event with an absent marker is `completed`; the
+same event with its exact protected marker still present is `resumable`.
+Duplicate events, key/payload disagreement, marker fingerprint drift, and a
+blocked marker binding are stable blocked states. Completed history does not
+raise health; resumable or blocked evidence raises `attention` without
+changing `keyed_append_blocked`.
+
+`start` is the agent-level default action: it runs §0.5 and then this loop. It is
+not a separate Python subcommand.
+
+## 3. Action Routing
+
+Before performing an action for the first time this session, read its reference document in full. Do not act from this table alone. Re-read only if the file or the runtime version changes.
+
+| Action | Read first |
+|---|---|
+| orientation — how OA and LWAR collaborate | [references/collaboration-principles.md](references/collaboration-principles.md) |
+| `start` / no explicit action | all five references below; `reconcile.md` before bootstrap mutations |
+| `presence`, `reconcile`, registration and lifecycle approval, `status`, state transitions | [references/reconcile.md](references/reconcile.md) |
+| `send`, task drafting, `--auto` routing, canary/shadow routing, `depends_on` | [references/publish.md](references/publish.md) |
+| `collect`, `validate`, `routing-circuit-reset`, `workflow-status`, result acceptance | [references/collect-validate.md](references/collect-validate.md) |
+| `recover`, `dead`, `control`, `prune`, `audit-health`, `audit-repair`, `audit-prune-resolve`, `audit-preserve-release`, audit | [references/recover-maintain.md](references/recover-maintain.md) |
+
+JSON Schemas for every bus message live in [schemas/](schemas/).
+
+## 4. Forbidden Actions (always in force)
+
+- Do not inject tasks by directly driving a vendor CLI or TUI.
+- Do not ask the operator to relay OA text to an LWAR session. After `/pao-lwar`, `send` (and `control`) is the message. If an LWAR is `on`+`active`/`watching` and does not claim, that is an ADP-loop failure on that LWAR — report it; do not write a human paste as the primary path.
+- Do not expose provider names in external mailbox paths.
+- Do not publish new tasks to an `off` or `draining` LWAR.
+- Treat `runtime_status=registered_not_started` and `runtime_status=starting` as
+  non-routable. Do not auto-route to a missing, corrupt, identity-mismatched,
+  startup, or stale heartbeat; explicit routing remains available for
+  operator-directed recovery.
+- Do not approve results from a stale identity as current-generation output.
+- Never approve success from `exit_code=0` alone — validate `completion_criteria`, evidence, artifacts, and actual test results. Only `status=succeeded` results are acceptance candidates; `complete` submission alone never implies success.
+- Do not rewrite failed validation as success.
+- Do not bypass the bundled schema gates or durable transitional ledger states (`publishing`, `requeueing`, `dead_lettering`).
+- Do not edit mailbox, registry, or lease files by hand; act only through the bundled CLI.

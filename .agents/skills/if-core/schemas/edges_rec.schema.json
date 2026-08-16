@@ -1,0 +1,27 @@
+{
+  "type": "object",
+  "required": [
+    "ts",
+    "src",
+    "rel",
+    "dst"
+  ],
+  "properties": {
+    "ts": {
+      "type": "string"
+    },
+    "src": {
+      "type": "string"
+    },
+    "rel": {
+      "enum": [
+        "parent",
+        "derived_from",
+        "contradicts"
+      ]
+    },
+    "dst": {
+      "type": "string"
+    }
+  }
+}

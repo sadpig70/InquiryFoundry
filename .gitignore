@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Live buses and run data — never publish
+.pao/
+.if/
+.env
+.env.*
+*.pem
+*.key
+
+# Local scratch / operator IDs / probe leftovers
+_workspace/
+.codex/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp

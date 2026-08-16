@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pao.validation-decision.v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "verdict",
+    "checks",
+    "criteria",
+    "artifact_verification",
+    "semantic_verdict",
+    "reason",
+    "decided_by",
+    "decided_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "pao.validation-decision.v1"
+    },
+    "verdict": {
+      "enum": [
+        "ready_for_oa_review",
+        "attention_required"
+      ]
+    },
+    "semantic_verdict": {
+      "enum": [
+        "accepted",
+        "rejected",
+        "undecidable"
+      ]
+    },
+    "reason": {
+      "type": ["string", "null"]
+    },
+    "checks": {
+      "type": "object"
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["criterion", "verdict"],
+        "properties": {
+          "criterion": {"type": "string"},
+          "verdict": {"enum": ["passed", "failed", "manual_check_required"]}
+        }
+      }
+    },
+    "artifact_verification": {
+      "type": "object",
+      "required": [
+        "verified",
+        "checked",
+        "failures"
+      ],
+      "properties": {
+        "verified": {
+          "type": "boolean"
+        },
+        "checked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "decided_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

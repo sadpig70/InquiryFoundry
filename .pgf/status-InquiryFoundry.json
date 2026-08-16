@@ -1,0 +1,51 @@
+{
+  "project": "InquiryFoundry",
+  "workplan": ".pgf/WORKPLAN-InquiryFoundry.md",
+  "design": ".pgf/DESIGN-InquiryFoundry.md",
+  "review": ".pgf/REVIEW-InquiryFoundry-Workplan.md",
+  "started_at": "2026-08-14T00:00:00",
+  "updated_at": "2026-08-14T18:00:00",
+  "iteration": 1,
+  "phase": "execute",
+  "review_iterations": 1,
+  "unresolved_issues": [
+    "visibility jail is PAO permissions+cwd, not OS sandbox (v0.3 TaskJail)",
+    "live PAO 3-LWAR E2E not run; fixture local cycle used"
+  ],
+  "closed_decisions": ["D19", "D20", "D21"],
+  "test_summary": "25 passed (pytest tests/if/test_if.py)",
+  "nodes": {
+    "InquiryFoundry": {"status": "done"},
+    "IfCore": {"status": "done"},
+    "SchemaPack": {"status": "done"},
+    "OperatorPack": {"status": "done"},
+    "GatePack": {"status": "done"},
+    "StatePack": {"status": "done"},
+    "StoreIo": {"status": "done"},
+    "BusContract": {"status": "done"},
+    "IfRuntime": {"status": "done"},
+    "IfOa": {"status": "done"},
+    "IfLwar": {"status": "done"},
+    "IfRoles": {"status": "done"},
+    "IfGenerate": {"status": "done"},
+    "IfContrarian": {"status": "done"},
+    "IfJudge": {"status": "done"},
+    "IfPhase2Roles": {
+      "status": "blocked",
+      "blocker": "HumanClose fixture reached awaiting_human; Phase2 still out of MVP scope"
+    },
+    "IfCycle": {"status": "done"},
+    "Allocate": {"status": "done"},
+    "ExploreLoop": {"status": "done"},
+    "ExploitLoop": {"status": "done"},
+    "Compose": {"status": "done"},
+    "HumanClose": {"status": "done"}
+  },
+  "summary": {
+    "total": 22,
+    "done": 21,
+    "in-progress": 0,
+    "designing": 0,
+    "blocked": 1
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pao.host-capability.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "adapter_id",
+    "runtime_name",
+    "runtime_version",
+    "command",
+    "discovered_at",
+    "requirements",
+    "enforcement",
+    "live_probe",
+    "eligible",
+    "reason_codes",
+    "contract_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "pao.host-capability.v1"},
+    "adapter_id": {"enum": ["qwen_code", "kimi_cli"]},
+    "runtime_name": {"enum": ["Qwen Code", "Kimi Code CLI"]},
+    "runtime_version": {"type": "string", "minLength": 1},
+    "command": {"type": "string", "minLength": 1},
+    "discovered_at": {"type": "string", "format": "date-time"},
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool_policy", "token_telemetry", "max_provider_calls"],
+      "properties": {
+        "tool_policy": {"const": "deny_all"},
+        "token_telemetry": {"const": "exact_provider_report"},
+        "max_provider_calls": {"const": 1}
+      }
+    },
+    "enforcement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bare_mode", "max_tool_calls", "output_format", "required_flags"],
+      "properties": {
+        "bare_mode": {"type": "boolean"},
+        "max_tool_calls": {"const": 0},
+        "output_format": {"enum": ["json", "stream-json"]},
+        "max_steps_per_turn": {"type": "integer", "minimum": 1},
+        "required_flags": {
+          "type": "object",
+          "additionalProperties": {"type": "boolean"}
+        }
+      }
+    },
+    "live_probe": {"type": ["object", "null"]},
+    "eligible": {"type": "boolean"},
+    "reason_codes": {"type": "array", "items": {"type": "string"}},
+    "contract_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  }
+}

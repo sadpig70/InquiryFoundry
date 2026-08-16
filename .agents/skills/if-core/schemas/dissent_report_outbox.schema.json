@@ -1,0 +1,68 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "local_id",
+    "examiner",
+    "attacks",
+    "kill_count",
+    "verdict"
+  ],
+  "properties": {
+    "local_id": {
+      "type": "string"
+    },
+    "examiner": {
+      "type": "string"
+    },
+    "attacks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dtype",
+          "attack",
+          "result",
+          "rationale"
+        ],
+        "properties": {
+          "dtype": {
+            "type": "string"
+          },
+          "attack": {
+            "type": "string"
+          },
+          "result": {
+            "enum": [
+              "miss",
+              "wound",
+              "kill"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "kill_rule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "minItems": 6,
+      "maxItems": 6
+    },
+    "kill_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "verdict": {
+      "enum": [
+        "SURVIVED",
+        "KILLED"
+      ]
+    }
+  }
+}

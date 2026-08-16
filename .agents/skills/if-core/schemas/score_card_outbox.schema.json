@@ -1,0 +1,60 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "anon_id",
+    "verdict",
+    "scores",
+    "notes"
+  ],
+  "properties": {
+    "anon_id": {
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "SCORED",
+        "GATE_FAIL"
+      ]
+    },
+    "failed_gate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "impact": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "testability": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "grounding": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "actionability": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}

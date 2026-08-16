@@ -1,0 +1,80 @@
+# OA Reference — Collection and Validation
+
+Replace `<PAO_SKILL>` with this skill's folder (SKILL.md §0).
+
+## Commands
+
+```bash
+python "<PAO_SKILL>/scripts/oa.py" collect
+python "<PAO_SKILL>/scripts/oa.py" collect --archive
+python "<PAO_SKILL>/scripts/oa.py" validate --task-id TASK_ID
+python "<PAO_SKILL>/scripts/oa.py" validate --task-id TASK_ID --record --decision accepted --reason "verified"
+python "<PAO_SKILL>/scripts/oa.py" validate --task-id SHADOW_TASK_ID --record --decision accepted --reason "objective grader passed" --routing-reported-tokens 123
+python "<PAO_SKILL>/scripts/oa.py" routing-circuit-reset --lwar-id LWAR2 --routing-class code_review --reason "root cause fixed and reviewed"
+python "<PAO_SKILL>/scripts/oa.py" workflow-status --workflow-id WORKFLOW_ID
+```
+
+## Rules
+
+- Every ingress result is schema-validated before interpretation. `collect` quarantines invalid contracts, stale generation/attempt/claim-token provenance, and duplicates; quarantined results are never auto-approved.
+- The attempt fence is strict: results echo both `attempt` and `claim_token`; `collect` matches them against the exact archived claim. `recover` and `dead --requeue` bump the attempt, so a late result from a superseded claim is rejected.
+- Every result is a **terminal submission, not a success claim** — only `status=succeeded` results are acceptance candidates; `failed`, `blocked`, `cancelled`, `interrupted`, `timed_out`, and `protocol_error` results are collected for the record and routed to recovery or reporting.
+- `collect` (and `recover`) close cancel tombstones: a still-pending
+  incoming/claimed task is auto-submitted as `cancelled`; a published ledger
+  entry with no mailbox claim is completed with `result_status=cancelled`.
+  The collect event lists `tombstones_closed`.
+- `collect` also verifies artifact provenance: each artifact object's content-addressed snapshot (`var/artifacts/<sha256>`) is size-checked then re-hashed; any mismatch quarantines the result as `artifact_tampered`. Legacy string artifacts carry no snapshot and skip this check. Provenance certifies the bytes the LWAR submitted — it detects post-submit mutation, it does **not** make the artifacts trustworthy.
+- `collect` commits the ledger before optional result archival, then reconciles archived results on later passes. A crash on either side of the move is therefore repairable.
+- If a clean retirement removes the LWAR registry slot before an accepted result leaves `outgoing/`, `collect` verifies the exact ledger payload, accepted semantic decision, claim provenance, and artifact snapshots, then moves it to `archive/results/` once and reports it under `archived_reconciled`. Changed, unaccepted, or uncommitted results remain fenced as stale.
+- `validate` reports mechanical checks; **semantic verification remains OA's judgment**. Record it explicitly with `--decision accepted|rejected|undecidable --reason ...`. `accepted` is refused when mechanical checks fail. `validate --record` is mutating and requires the writer lease; plain `validate` stays observer-safe.
+- For a canary-routed task only, `--routing-reported-tokens` binds the recorded
+  accepted/rejected semantic decision into one replay-safe online observation.
+  `undecidable`, missing receipts, changed validation, negative token counts,
+  and conflicting observations fail closed. The loader re-verifies both the
+  canary receipt and the persisted task-ledger validation before counting it.
+- A rejected live candidate opens its alias/class circuit immediately.
+  Confidence-detected window drift also opens it. Circuits never auto-close;
+  `routing-circuit-reset` requires a nonempty operator reason and `PAO_OA_ID`,
+  writes a reset watermark, and records an exact audit event. The watermark
+  excludes that alias/class's observations at or before `reset_at` from both
+  later circuit refresh and promotion statistics. Collect fresh ordinary
+  shadow evidence after reset before authorizing another production route. A
+  rejected post-reset ordinary shadow immediately reopens the sticky circuit;
+  the operator must not continue the requalification panel.
+- A `recovery_shadow` validation records the same receipt, selected identity,
+  current generation, token, and semantic-decision bindings as other online
+  evidence. It remains separately scoped: selectors exclude it from automatic
+  promotion statistics, and circuit refresh excludes it from drift and trip
+  windows. Treat it as evidence for an explicit operator reset review, never as
+  an automatic reset or promotion authorization.
+- Never approve success from `exit_code=0` alone. Validate `completion_criteria`, `evidence` (commands run, tests passed/failed), `artifacts`, and actual test results.
+- Do not rewrite failed validation as success. A failed or unverifiable result goes back through recovery ([recover-maintain.md](recover-maintain.md)) or is reported honestly.
+- `workflow-status` aggregates ledger state per workflow; use it before publishing `depends_on` successors.
+
+## Closeout decision tree (after `validate`)
+
+`validate` does not accept or reject on its own — it emits a `verdict`
+(`ready_for_oa_review` when the mechanical checks pass, else `attention_required`)
+with the `completion_criteria` left as `manual_check_required`. You, the OA, decide
+the closeout:
+
+```text
+validate --task-id T
+├─ verdict = attention_required
+│    → the mechanical checks failed (wrong status, missing evidence/artifacts,
+│      exit_code ↔ status mismatch). Do NOT accept. Route to recovery
+│      (recover-maintain.md) or report the failure honestly to the user.
+└─ verdict = ready_for_oa_review
+     → mechanical checks passed; now apply YOUR semantic judgment against each
+       completion_criterion using the evidence/artifacts.
+       ├─ criteria genuinely met → accept: record it with
+       │    `validate --record --decision accepted --reason "..."`
+       │    (persists the ValidationDecision) and report the task done.
+       ├─ criteria NOT met despite green mechanics → treat as a failure: recover
+       │    or report; never rewrite it as success.
+       └─ genuinely undecidable by you → surface to the user with the evidence;
+            do not fabricate an acceptance.
+```
+
+Acceptance is the ledger's `completed` state plus a recorded semantic decision of
+`accepted`. A completed result without that decision cannot satisfy a dependency.

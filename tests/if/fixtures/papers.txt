@@ -1,0 +1,2 @@
+Scaling laws hold at 1e23 FLOP. source: papers/kaplan2020
+Scaling laws do not hold at 1e23 FLOP. source: papers/hoffmann2022

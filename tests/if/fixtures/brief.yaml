@@ -1,0 +1,15 @@
+brief_id: RUN-20260814-1
+mode: normal
+domain: scaling
+goal: discovery
+constraints: []
+forbidden_premises: []
+must_consider_slices: {}
+success_criteria: fixture
+evidence_hints:
+  papers:
+    - papers/kaplan2020
+    - papers/hoffmann2022
+budget:
+  max_rounds: 2
+  max_seeds_per_lwar: 4

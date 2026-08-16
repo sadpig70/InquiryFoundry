@@ -1,0 +1,33 @@
+local_id: LWAR1-01
+question_id: Q-20260814-0001
+question: bad
+question_norm: bad
+question_class: phenomenon
+operator: OP-CONTRA
+unknown_type: contradictory
+unknown_ref: U-1
+target_concepts: []
+why_matters: ""
+assumptions: []
+unknowns: []
+evidence: []
+falsifier: ""
+minimal_test: {variable: "", comparison: "", reject_if: ""}
+action_plan: {method: data, data: x, metric: y, criterion: z}
+lineage:
+  generated_by: LWAR1
+  evidence_kind: papers
+  objective: importance_max
+  run_id: RUN-1
+  parents: []
+  domain: x
+version: 1
+status: DRAFT
+contradictions: []
+estimated_cost: ""
+scores: {novelty: 0.9}
+gate_results: {}
+dissent: []
+human_review: {status: pending, reviewer: "", note: ""}
+created_at: t
+last_verified_at: t

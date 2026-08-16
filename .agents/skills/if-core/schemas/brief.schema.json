@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "brief_id",
+    "domain",
+    "goal",
+    "evidence_hints",
+    "budget"
+  ],
+  "properties": {
+    "brief_id": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "normal",
+        "ablation"
+      ]
+    },
+    "domain": {
+      "type": "string"
+    },
+    "goal": {
+      "enum": [
+        "discovery",
+        "validation",
+        "strategy",
+        "risk",
+        "invention"
+      ]
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "forbidden_premises": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "must_consider_slices": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "success_criteria": {
+      "type": "string"
+    },
+    "evidence_hints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "minProperties": 1
+    },
+    "budget": {
+      "type": "object",
+      "required": [
+        "max_rounds",
+        "max_seeds_per_lwar"
+      ],
+      "properties": {
+        "max_rounds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_seeds_per_lwar": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

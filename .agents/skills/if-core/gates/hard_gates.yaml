@@ -1,0 +1,12 @@
+mechanical:
+  - {id: G-GROUND, rule: "evidence >= 1 and source matches hints (len>=6)"}
+  - {id: G-CLEAR, rule: "target_concepts, assumptions, unknowns non-empty"}
+  - {id: G-PATH, rule: "action_plan.method in observe|experiment|data|simulation and distinct fields"}
+  - {id: G-TESTSHAPE, rule: "minimal_test.variable/comparison/reject_if present"}
+human:
+  - {id: G-DUP, rule: "human"}
+  - {id: G-UNKNOWN, rule: "human"}
+  - {id: G-ACTION, rule: "human"}
+  - {id: G-SAFETY, rule: "human"}
+removed:
+  - G-FALSIFY

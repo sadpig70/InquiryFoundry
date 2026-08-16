@@ -1,0 +1,42 @@
+local_id: LWAR1-01
+question_id: Q-20260814-0001
+question: Why can A and B not both be true — scaling vs not scaling
+question_norm: why can a and b not both be true scaling vs not
+question_class: phenomenon
+operator: OP-CONTRA
+unknown_type: contradictory
+unknown_ref: U-RUN-20260814-1-1
+target_concepts: [scaling]
+why_matters: test
+assumptions: [hints extracted correctly]
+unknowns: [scaling contradiction]
+evidence:
+  - {source: papers/kaplan2020, claim: scales linearly, confidence: 0.6}
+  - {source: papers/hoffmann2022, claim: does not scale linearly, confidence: 0.6}
+falsifier: sources withdrawn
+minimal_test:
+  variable: source_agreement
+  comparison: pair
+  reject_if: no contradiction
+action_plan:
+  method: data
+  data: hint pack
+  metric: contradiction remains
+  criterion: unresolved after review
+lineage:
+  generated_by: LWAR1
+  evidence_kind: papers
+  objective: importance_max
+  run_id: RUN-20260814-1
+  parents: []
+  domain: scaling
+version: 1
+status: DRAFT
+contradictions: []
+estimated_cost: ""
+scores: {}
+gate_results: {}
+dissent: []
+human_review: {status: pending, reviewer: "", note: ""}
+created_at: "2026-08-14T00:00:00+00:00"
+last_verified_at: "2026-08-14T00:00:00+00:00"
