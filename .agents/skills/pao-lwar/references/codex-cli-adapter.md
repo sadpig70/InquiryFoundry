@@ -21,13 +21,17 @@ turn starts `adp` again. Do not wait for the operator.
 
 ## Official loop
 
-Identity (this bus):
+Identity — use only a path this session was handed directly by the operator or
+emitted by its own earlier watcher event:
 
 ```text
-D:\InquiryFoundry\.pao\var\identities\lwar-instance-d4914b458c4d43f3a3a0370991a5efd9.json
+<BUS_ROOT>\var\identities\<instance_id>.json
 ```
 
-If that file still matches `lwar.py status` exit 0, do **not** register.
+If that file still matches `lwar.py status` exit 0, do **not** register. Never
+adopt a path found by scanning `var/identities/` or copied out of a document:
+a documented path is not a trusted handoff, and adopting it steals another
+session's slot.
 
 ```bash
 python -u "<PAO_SKILL>/scripts/lwar.py" adp --identity-file IDENTITY

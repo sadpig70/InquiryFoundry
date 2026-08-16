@@ -17,7 +17,7 @@ argument-hint: "start | info | doctor | oa-status | register [number] | response
 
 ## 0. Self-Contained Invocation
 
-This skill bundles the full PAO runtime (`scripts/`, `pao_runtime/`, `schemas/`). In every command, replace the placeholder `<PAO_SKILL>` with the **absolute path of the folder containing this SKILL.md**. It is a documentation placeholder, not an environment variable — never pass it to a shell unresolved, and always quote the substituted path.
+This skill bundles the full PAO runtime (`scripts/`, `pao_runtime/`, `schemas/`). In every command, replace the placeholder `<PAO_SKILL>` with the **absolute path of the folder containing this SKILL.md**. It is a documentation placeholder, not an environment variable — never pass it to a shell unresolved, and always quote the substituted path. If this host's shell does **not** preserve quotes (some tool-driven shells pass them through as literal argument characters, splitting `--runtime-name "My Runtime"` into two arguments), use values without spaces or the host's own escaping instead — verify with one short command before `register`.
 
 ```bash
 python "<PAO_SKILL>/scripts/lwar.py" register
@@ -43,7 +43,8 @@ If the instruction is only "read this skill and act as a PAO LWAR", or
 `/pao-lwar` is invoked with no action, treat that as an executable `start`
 command. Do not summarize this skill, ask for a second bootstrap prompt, or wait
 for the operator to restate the procedure. Resolve `<PAO_SKILL>` from this
-`SKILL.md`, read all bundled reference documents listed in §2 in full, execute
+`SKILL.md`, read the **required** reference set listed in §2 in full (the
+conditional ones only when they apply to this runtime), execute
 the Session Bootstrap (including the once-per-session host-notify probe), then
 enter the style-selected ADP loop in §0.5 / Rule 3
 (`adp_exit_notify.py` or `adp_live_notify.py`). Do **not**
@@ -61,6 +62,14 @@ exact event; do not replace execution with a tutorial.
 
 ## 0.5 Session Bootstrap (cold start)
 
+**Register only if this session intends to do mailbox work.** A session told to
+read, review, evaluate, or diagnose this skill runs `doctor`, the host probe,
+and `oa-status` — and stops at step 5 without registering. Stopping there is the
+correct outcome for such a session, not a failure to complete the bootstrap:
+`register` takes a real numbered slot that only OA can return, and a slot held
+by a session that will never watch its mailbox is indistinguishable, to OA, from
+a runtime that failed to start.
+
 Run this decision flow at the start of a session, before any other action:
 
 ```text
@@ -71,11 +80,14 @@ Run this decision flow at the start of a session, before any other action:
 3. doctor --role lwar   → unhealthy? stop and report.
 3a. Once this session, run [references/host-notify-probe.md](references/host-notify-probe.md)
     in full **before** `register` / `response` / `adp`. Record `bg_timeout_50m`
-    (`pass` only if this host lets you **set** a background-Python timeout to
-    >= 50 minutes; accepting the option completes that check — do not sleep
-    50 minutes) and `notify_style` (`live-notify` or `exit-notify`). If the
-    probe is inconclusive, use `exit-notify` + blocking. `bg_timeout_50m=fail`
-    does not block LWAR; it only forbids a 50-minute background slice.
+    (background-Python timeout option; accepting the option completes that
+    check — do not sleep 50 minutes), `host_blocking_cap_s` (the longest a
+    blocking tool call may run here) and the `slice_s` derived from it, and
+    `notify_style` (`live-notify` or `exit-notify`). `live-notify` requires the
+    host to wake this session on each stdout line **without** an agent-initiated
+    poll; output you must ask for is `exit-notify`. If the probe is
+    inconclusive, use `exit-notify` + blocking. `bg_timeout_50m=fail` does not
+    block LWAR; it only forbids a 50-minute background slice.
 4. Run `lwar.py oa-status`. Record `live`, `stale`, `missing`, or `invalid`.
    Only `live` proves an OA is currently supervising. Any other state does not
    block registration: continue, then wait for OA reconciliation without
@@ -98,7 +110,10 @@ Run this decision flow at the start of a session, before any other action:
    redelivers any still-leased claim with the original claim_token.
    No explicit identity_file and no owned request_id → REGISTER fresh.
    Never scan `var/identities/`, guess ownership from filenames, or adopt
-   another session's identity. Run `lwar.py register …` (register.md),
+   another session's identity. An identity path written in any reference
+   document, README, or example is **not** a trusted handoff — only a path this
+   session was handed directly by the operator or emitted by its own watcher
+   counts. Adopting a documented path steals another session's slot. Run `lwar.py register …` (register.md),
      remember request_id, then start ONE official watcher:
      `python -u "<PAO_SKILL>/scripts/lwar.py" response REQUEST_ID --resident --max-runtime-s 3000`
      Prefer a **blocking** tool call so this session receives stdout when the
@@ -136,7 +151,7 @@ not a separate Python subcommand.
 
 1. Before registering, read [references/register.md](references/register.md). Before the **first** watch slice, read [references/host-notify-probe.md](references/host-notify-probe.md) and [references/adp-loop.md](references/adp-loop.md) **in full** — the host style, exit-code contract, lease alignment, and stale-identity rejection are pre-loop knowledge, not lookup-on-event material. A host adapter must also read [references/host-adapter.md](references/host-adapter.md). If this runtime is Codex (`adapter_id=codex`), also read [references/codex-cli-adapter.md](references/codex-cli-adapter.md) **in full** before the first `adp` — Codex must use a blocking tool; it must not wait for a new turn. Read each reference in full once per session before its first use; re-read only if the file or the runtime version changes.
 2. Use only the approved `(lwar_id, instance_id, generation)` as your runtime identity. Never claim an `LWARn` identity before approval.
-3. **Run the watcher that matches the host-notify probe.** exit-notify (default): `adp_exit_notify.py` / `lwar.py adp`. Prefer a blocking `python -u` tool so stdout of the **exited** process lands in this session. After each exit: read JSON; if `task_received` then `begin` → work → `complete` **then** restart the same script; if `idle_timeout` / `registration_pending` then restart immediately. live-notify (only if probe `pass` + `live-notify`): `adp_live_notify.py` / `lwar.py adp-live` as a background tool; handle each stdout line while it runs; do not restart after `complete`. If `shutdown` / successful `retire` / `adp_error` then stop. Do not start `adp_live_notify.py` on Codex/Kimi-style exit-notify hosts. Do not file-poll. Do not wait for a human to paste OA text — the mailbox **is** OA's message. `--detach` / `adp-wait` / `kimi_adp_recycle.py` are not official. Never start a second watcher while the first is alive.
+3. **Run the watcher that matches the host-notify probe.** exit-notify (default): `adp_exit_notify.py` / `lwar.py adp`. Prefer a blocking `python -u` tool so stdout of the **exited** process lands in this session. After each exit: read JSON; if `task_received` then `begin` → work → `complete` **then** restart the same script; if `idle_timeout` / `registration_pending` then restart immediately. live-notify (only if probe `pass` + `live-notify`): `adp_live_notify.py` / `lwar.py adp-live` as a background tool; handle each stdout line while it runs; do not restart after `complete`. If `shutdown` / successful `retire` / `adp_error` then stop. Do not start `adp_live_notify.py` on any host whose probe returned `notify_style=exit-notify` (that includes an inconclusive probe). Do not file-poll. Do not wait for a human to paste OA text — the mailbox **is** OA's message. `--detach` / `adp-wait` / `kimi_adp_recycle.py` are not official. Never start a second watcher while the first is alive.
 4. `idle_timeout` with `reason=max_runtime` (exit 10) is the official idle of `adp` / `--resident --max-runtime-s`: restart the same watcher. `idle_timeout` / `state_wait` without `--max-runtime-s` are compatibility single-slice events. `--background` `watcher_report` is informational only if you opted into that non-official path.
 5. On `task_received`, preserve `invocation_id`, `execution_id`, and
    `task.claim_token`, then run `lwar.py begin` **before any task command,
@@ -156,13 +171,22 @@ not a separate Python subcommand.
    permanently stale and must never resume or reuse its identity file.
 7. Do not modify registry, incoming, or lease files by hand; act only through the bundled CLI.
 8. Do not pollute context by restating idle stdout messages at length.
-9. On an unknown watcher event, fail closed **on the event, not the daemon**: if a task is claimed, submit a `protocol_error` terminal result. Do not kill the background process. Never retry the unknown event blindly. If the background process itself exits with an unknown code, treat that as `adp_error` and stop (do not auto-restart).
+9. On an unknown watcher event, fail closed **on the event, not the daemon**: if a task is claimed, submit a `protocol_error` terminal result. Under live-notify, do not kill the running watcher; under exit-notify the process has already exited, so simply do not restart it until the event is resolved. Never retry the unknown event blindly. If the watcher process itself exits with an unknown code, treat that as `adp_error` and stop (do not auto-restart).
 10. Never expose provider, vendor, or model names in result metadata, mailbox paths, artifact paths, or artifact contents — the `LWARn` alias is the only external identity. `complete` enforces this against the registered runtime profile.
 11. Preserve the exact `task.claim_token` emitted by `task_received` and pass it to `complete`. A recovered/requeued claim has a new token; an old worker must fail closed instead of submitting into the new attempt.
 12. Treat the adopted identity's `bus_root` as immutable authority. Never redirect that identity to another bus; a root conflict is a fatal configuration error.
 13. Treat the owned registration `request_id` as the pre-identity recovery
     handle. If the watcher `response` process dies before adoption, start that
-    exact command once more (`response --resident --max-runtime-s 3000`); do not register again. A
+    exact command once more (`response --resident --max-runtime-s 3000`); do not register again.
+    Restarting after `registration_pending` is **bounded**, not endless: if
+    approval has not arrived after a wall-clock budget you set in advance
+    (default: 1 hour, or 6 consecutive `registration_pending` restarts), stop
+    restarting and report the exact `request_id`, `instance_id`, and the
+    observed `oa-status` to the operator. A dormant bus is an operator problem,
+    not something to wait out forever. Never re-register to escape the wait, and
+    never delete your own pending request: an approved-but-unadopted slot and an
+    unapproved request are both cleared by OA (`recover --reclaim-unadopted`),
+    never by the LWAR. A
     `task_received` event with `recovered_claim: true` is the same durable
     claim and MUST retain its original `claim_token`.
 14. A watcher invocation is an epoch-fenced delivery attempt, not execution
@@ -180,17 +204,47 @@ Before performing an action for the first time this session, read its reference 
 
 | Action | Read first |
 |---|---|
-| orientation — how OA and LWAR collaborate | [references/collaboration-principles.md](references/collaboration-principles.md) |
-| `start` / no explicit action | all references below, then §0.5 |
-| first-session timeout option + live-notify / exit-notify | [references/host-notify-probe.md](references/host-notify-probe.md) |
-| `register [number]`, `response`, identity adoption | [references/register.md](references/register.md) |
-| host supervision, blocking-call timeout recovery | [references/host-adapter.md](references/host-adapter.md) |
-| `adp` — the watch loop, stdout events, control commands | [references/adp-loop.md](references/adp-loop.md) |
-| background host start / 24h report | [references/background-playbook.md](references/background-playbook.md) |
-| Kimi CLI (no stdout inject, 1h job) | [references/kimi-cli-adapter.md](references/kimi-cli-adapter.md) |
-| Codex CLI (no new-turn on TaskOutput) | [references/codex-cli-adapter.md](references/codex-cli-adapter.md) — **required** when `adapter_id` is `codex` |
-| executing a claimed task, drafting and submitting results | [references/execute-complete.md](references/execute-complete.md) |
-| `oa-status`, `status`, `on`, `drain`, `off`, `retire`, `unregister`, exhaustion handoff | [references/lifecycle.md](references/lifecycle.md) |
+| orientation — how OA and LWAR collaborate | **required** — [references/collaboration-principles.md](references/collaboration-principles.md) |
+| `start` / no explicit action | the six **required** references marked here, then §0.5 |
+| first-session timeout option + live-notify / exit-notify | **required** — [references/host-notify-probe.md](references/host-notify-probe.md) |
+| `register [number]`, `response`, identity adoption | **required** — [references/register.md](references/register.md) |
+| `adp` — the watch loop, stdout events, control commands | **required** — [references/adp-loop.md](references/adp-loop.md) |
+| executing a claimed task, drafting and submitting results | **required** — [references/execute-complete.md](references/execute-complete.md) |
+| `oa-status`, `status`, `on`, `drain`, `off`, `retire`, `unregister`, exhaustion handoff | **required** — [references/lifecycle.md](references/lifecycle.md) |
+| host supervision, blocking-call timeout recovery | conditional — [references/host-adapter.md](references/host-adapter.md), when acting as a host adapter |
+| background host start / 24h report | conditional — [references/background-playbook.md](references/background-playbook.md), live-notify hosts only |
+| Kimi CLI (no stdout inject, 1h job) | conditional — [references/kimi-cli-adapter.md](references/kimi-cli-adapter.md), when `adapter_id` is `kimi_cli` |
+| Codex CLI (no new-turn on TaskOutput) | conditional — [references/codex-cli-adapter.md](references/codex-cli-adapter.md), **required** when `adapter_id` is `codex` |
+
+A conditional reference that does not match this runtime's `adapter_id` is not
+required reading, and its host-specific instructions do not apply here.
+
+### Canonical commands by `notify_style`
+
+This table is the single source for **which command to run**. When any other
+section, reference, or `scripts/README.md` appears to say otherwise, this table
+wins. Resolve remaining disagreements in this order: **adapter constraint**
+(a reference matching this runtime's `adapter_id`) > **host-notify probe result**
+> **generic default**.
+
+| Step | exit-notify (default) | live-notify (probe `live-notify` **and** `bg_timeout_50m=pass` only) |
+|---|---|---|
+| register | `lwar.py register …` | same |
+| identity adoption | `lwar.py response REQUEST_ID --resident --max-runtime-s 3000` as a **blocking** call | `lwar.py response REQUEST_ID --background` |
+| watcher | `scripts/adp_exit_notify.py --identity-file <abs>` (`lwar.py adp` / `adp-exit`) | `scripts/adp_live_notify.py --identity-file <abs>` (`lwar.py adp-live`) as a background tool |
+| after `task_received` | `begin` → work → `complete`, **then restart the same script** | `begin` → work → `complete`; the process is still running — **do not restart it** |
+| after `idle_timeout` / `registration_pending` | restart the same script immediately | not emitted; the process stays up |
+| process lifetime | exits on the first event or `--max-runtime-s` | exits only on `shutdown` / successful `retire` / `adp_error` |
+| watchers alive at once | exactly 1 | exactly 1 |
+
+`--background`, `--detach`, `adp-wait`, and `kimi_adp_recycle.py` are never the
+exit-notify path. A host whose probe was inconclusive is exit-notify.
+
+`3000` is the default idle slice. On a host whose blocking calls are killed
+sooner, pass the shorter `slice_s` derived in host-notify-probe.md §1b
+(`--max-runtime-s <slice_s>`, e.g. `540` where the cap is 600 s) so each slice
+ends with a readable `idle_timeout` instead of a host kill. Only the restart
+frequency changes.
 
 **Action name → actual CLI** (the hints are short labels; the CLI verbs differ):
 

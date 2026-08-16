@@ -45,7 +45,66 @@ Do not file-poll. Do not start `--background` and end the turn.
 
 `--background` with host stdout-inject is a non-official Claude bonus only.
 
-## Core loop
+## Core loop — exit-notify (default, every host unless the probe says otherwise)
+
+```python
+def ADP_slice(identity_or_request) -> None:
+    # Blocking call in THIS turn. The process exits; this session reads its stdout.
+    lines = run_blocking(
+        'python -u "<PAO_SKILL>/scripts/adp_exit_notify.py" --identity-file IDENTITY'
+        # pre-adoption: lwar.py response REQUEST_ID --resident --max-runtime-s 3000
+    )
+    ADP_on_exit(lines)
+
+def ADP_on_exit(lines) -> None:
+    # Every line matters, but the LAST event decides the restart policy: the
+    # adopting process keeps watching after `identity_adopted` and exits later.
+    for line in lines:
+        if line.event == "identity_adopted":
+            remember(line.identity_file)
+    event = lines[-1]
+    if event.event == "identity_adopted":
+        return ADP_slice(event.identity_file)   # adoption was the terminal line
+    if event.event in ("idle_timeout", "registration_pending"):
+        return ADP_slice(...)                   # restart the same command immediately
+    if event.event == "adp_error":
+        report_error_and_stop(event)
+        return
+    if event.event == "control":
+        if event.command == "retire":
+            submit_terminal_result_if_holding_a_claim()
+            while run_lwar_retire(identity_file) != "lwar_retired":
+                observe_oa_status(identity_file)
+            return                              # do not restart
+        if event.command == "shutdown":
+            submit_terminal_result_if_holding_a_claim()
+            return                              # do not restart
+        handle_control(event)
+        return ADP_slice(...)                   # ping / drain / cancel: restart
+    if event.event == "task_received":
+        grant = run_lwar_begin(...)
+        if grant.event == "execution_fenced":
+            return ADP_slice(...)
+        result = AI_execute_task(event.task)
+        write_result_draft(result)
+        run_lwar_complete(...)                  # complete FIRST
+        return ADP_slice(...)                   # then restart the same script
+    if holding_a_claim():
+        submit_protocol_error_result()
+
+    # acceptance_criteria:
+    #   - exactly one watcher process is alive at a time, and zero while the agent works
+    #   - the restart happens only after `complete`, never before
+    #   - a process exit is normal, not a failure; only shutdown / successful retire /
+    #     adp_error stop the loop
+    #   - the agent re-invokes in the same turn and never ends the turn waiting for inject
+```
+
+## Core loop — live-notify / `--background` hosts only
+
+Use this shape **only** when the probe returned `notify_style=live-notify` and
+`bg_timeout_50m=pass`. On an exit-notify host it is wrong: following it either
+skips the restart (the ADP stops) or leaves two watchers alive.
 
 ```python
 def ADP_start(identity_or_request) -> None:
@@ -110,34 +169,50 @@ their canonical `<root>/var/identities/` path.
 
 ## Exit codes and stdout events
 
-The agent must inspect both the exit code and the stdout JSON `event`.
+The agent must inspect both the exit code and the stdout JSON `event`. The two
+watcher styles produce different codes for the same event, so read the column
+that matches the style selected by the probe.
 
-| Code | `event` | Immediate action |
-|---:|---|---|
-| (running) | `identity_adopted` | Remember `identity_file`. Background process is already watching. Do not start another |
-| (running) | `task_received` | Save all fence handles, run `begin`, execute only after `execution_began`. Do not restart the watcher |
-| (running) | `watcher_report` | 24h (or `--report-every`) pulse. Acknowledge. Do not restart the watcher |
-| `10` | `idle_timeout` (`reason=max_runtime`) | **Kimi official:** `--resident --max-runtime-s` idle. Restart the same watcher |
-| `10` | `idle_timeout`, `state_wait` | Compatibility single-slice only (neither `--background` nor `--resident`+`--max-runtime-s`) |
-| (running) | `control:ping` | Background watcher acks ping with **no stdout**. If you somehow see this, ignore |
-| (running) | `control:drain` | Finish current work, request lifecycle `draining`, leave the background watcher running until `shutdown` |
-| (running) | `control:cancel` | Stop the held task and submit `cancelled`. Unclaimed cancels are tombstoned by the watcher |
-| `20` then exit | `control:retire` | Submit any held terminal result, then `lwar.py retire` until `lwar_retired`. The watcher process exits |
-| `20` then exit | `control:shutdown` | Submit held claim first (`interrupted` if no verdict). Watcher process exits. Do not restart |
-| `30` | `adp_error` | Report, stop ADP. Do not auto-restart the background process |
-| `40` | `invocation_superseded` | This watcher lost to a newer replay; stop this invocation without executing |
-| any other | any unknown event | Fail closed on the **event**: if a task is claimed, submit `protocol_error`. Leave the background process running unless it has exited |
+**The exit code your host reports is not always the process's exit code.** Some
+tool wrappers collapse every non-zero status to `1`, or report the wrapper's own
+result instead of the child's. The codes below are what the watcher process
+returns. **Branch on the stdout JSON `event`**; use the reported code only as
+corroboration, and if the two disagree, the JSON wins. If you need the true
+code on such a host, read it from inside the call (for example a `python`
+wrapper that reports `returncode`) rather than trusting the tool result.
+
+| `event` | exit-notify | live-notify | Immediate action |
+|---|---:|---:|---|
+| `identity_adopted` | (process continues) | (running) | Remember `identity_file`. The adopting process keeps watching in-process under both styles — do not start another. Under exit-notify it exits later, on the first task/control/fatal or the remaining cap; that later event decides the restart |
+| `task_received` | `0` then exit | (running) | Save all fence handles, run `begin`, execute only after `execution_began`. exit-notify: restart the same script **after** `complete`. live-notify: do not restart |
+| `watcher_report` | n/a | (running) | 24h (or `--report-every`) pulse. Acknowledge. Do not restart the watcher |
+| `idle_timeout` (`reason=max_runtime`) | `10` | n/a | Official exit-notify idle of `adp` / `--resident --max-runtime-s`. Restart the same watcher |
+| `idle_timeout`, `state_wait` | `10` | n/a | Compatibility single-slice only (neither `--background` nor `--resident`+`--max-runtime-s`) |
+| `registration_pending` (`reason=max_runtime`) | `2` | n/a | Approval has not arrived yet. Restart the same `response` command |
+| `control:ping` | `20` then exit | (running, no stdout) | exit-notify: the ack is already written; restart. live-notify: acked with no stdout — if you somehow see this, ignore |
+| `control:drain` | `20` then exit | (running) | Finish current work, request lifecycle `draining`. exit-notify: restart and keep serving until `shutdown`. live-notify: leave the watcher running until `shutdown` |
+| `control:cancel` | `20` then exit | (running) | Stop the held task and submit `cancelled`, then restart (exit-notify only). Unclaimed cancels are tombstoned by the watcher |
+| `control:retire` | `20` then exit | `20` then exit | Submit any held terminal result, then `lwar.py retire` until `lwar_retired`. The watcher process exits. Do not restart |
+| `control:shutdown` | `20` then exit | `20` then exit | Submit held claim first (`interrupted` if no verdict). Watcher process exits. Do not restart |
+| `adp_error` | `30` | `30` | Report, stop ADP. Do not auto-restart |
+| `invocation_superseded` | `40` | `40` | This watcher lost to a newer replay; stop this invocation without executing |
+| any unknown event | any other | any other | Fail closed on the **event**: if a task is claimed, submit `protocol_error`. Do not restart until it is resolved; under live-notify leave the running process alone |
 
 Every watcher event includes the absolute `identity_file`. Heartbeats are written
 by the watcher itself on every poll—the agent never emits or edits them.
 
 Error discipline. `adp_error` (exit 30) means the watcher itself hit a fatal condition (e.g. the identity no longer verifies) and exited: **stop this ADP run and report** — do not blindly re-invoke the same command. The only case for a bounded retry is a *transient* error you have reason to believe is self-clearing (e.g. a momentary file lock); if you choose to retry, cap it at **3 consecutive identical `adp_error`s**, then stop and escalate to OA. Never loop on an unresolved error.
 
-Cancel reaching an agent mid-execution. The **background watcher keeps running**
-while you execute, so `control:cancel` arrives as a host-injected stdout line.
-On seeing it, stop the task and submit a `cancelled` result. Do not start a
-second watcher to look for cancel. (A cancel for a task you have not yet claimed
-needs no agent action — the tombstone handles it, see below.)
+Cancel reaching an agent mid-execution. Under **live-notify** the watcher keeps
+running while you execute, so `control:cancel` arrives as a host-injected stdout
+line: stop the task and submit a `cancelled` result. Do not start a second
+watcher to look for cancel. Under **exit-notify** the watcher has already exited
+and must not be restarted before `complete`, so a cancel cannot reach a task
+that is already executing — it is delivered on the next slice, after `complete`,
+as `control:cancel` or through the tombstone. The upper bound on cancellation
+delay is therefore that task's own execution time; this is a known limit of the
+style, not a fault. (A cancel for a task you have not yet claimed needs no agent
+action — the tombstone handles it, see below.)
 
 When the slot is expected to stay in a non-`on` state for a while (e.g. `draining` wind-down), pass `--state-wait-backoff-max SECONDS` so the in-slice poll interval doubles up to that cap instead of busy-polling at `--interval`; it resets automatically when the state returns to `on`.
 
@@ -167,9 +242,9 @@ When a task is claimed, the watcher extends the lease to cover the task's own ex
 
 - The `--background` watcher does not exit on idle or after delivering a task. If it
   exits after a non-terminal control other than shutdown/retire, that is a bug:
-  report it; do not write a turn-loop wrapper. **Kimi `--resident --max-runtime-s`
-  is supposed to exit** after one event or 50 idle minutes — restart after
-  `complete` / `idle_timeout` (see kimi-cli-adapter.md).
+  report it; do not write a turn-loop wrapper. **The exit-notify watcher
+  (`adp` / `--resident --max-runtime-s`) is supposed to exit** after one event or
+  50 idle minutes — restart after `complete` / `idle_timeout`.
 - If a compatibility `--resident` blocking call times out and discards stdout,
   prefer restarting as `--background`. A new background watcher redelivers this
   identity's one unexpired leased claim as `task_received` with

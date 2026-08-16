@@ -20,16 +20,18 @@ return their slots through `retire`. Each watcher entry has a monotonic
 invocation epoch. Newly claimed tasks carry a stable `execution_id`; `begin`
 atomically grants one invocation an `execution_token`, and `complete` requires
 that token for the fenced path in addition to the exact claim token emitted in
-`task_received`. The default LWAR ADP uses a **background** watcher
-(`--background --report-every 86400`) that crosses idle slice boundaries
+`task_received`. The default LWAR ADP is the **exit-notify** watcher on every host:
+`lwar.py adp` / `adp-exit` / `adp-kimi` (`scripts/adp_exit_notify.py`), with
+`lwar.py response REQUEST_ID --resident --max-runtime-s 3000` performing identity
+adoption and watcher entry in one Python process. It exits on the first
+task/control/fatal or after 50 idle minutes; hosts start it with `python -u`,
+read that stdout, and restart the same command. The **background** watcher
+(`--background --report-every 86400`) instead crosses idle slice boundaries
 internally, keeps heartbeat fresh, prints a JSON line only on
 task/control/fatal/`watcher_report`, and does not depend on agent turn
-scheduling. Hosts start it with `python -u` and notify on stdout.
-`lwar.py response REQUEST_ID --background` performs identity adoption and
-background watcher entry in one Python process. **Kimi official** is
-`lwar.py adp-kimi` / `response --resident --max-runtime-s 3000` (exit on first
-event or 50 idle minutes). `--resident` without `--max-runtime-s` remains the
-compatibility blocking call (exits after the first delivered event). Adoption publishes a `starting` heartbeat;
+scheduling — it is the **live-notify-only** path (probe `live-notify` and
+`bg_timeout_50m=pass`), not the default. `--resident` without `--max-runtime-s`
+remains the compatibility blocking call (exits after the first delivered event). Adoption publishes a `starting` heartbeat;
 OA distinguishes that bounded startup phase from a watcher that was active and
 later became stale. The registration request id is also a replay-safe
 pre-identity handle: if a host blocking-call timeout discards stdout, replaying

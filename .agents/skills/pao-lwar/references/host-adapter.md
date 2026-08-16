@@ -108,6 +108,49 @@ before the limitation matters:
    Kimi tool-use part type name remains unobserved; `--max-steps-per-turn 1`
    structurally prevents a tool round-trip and a final answer in one turn.
 
+## Host capability matrix
+
+Measured values from runtimes that have executed this bundle's bootstrap. Use
+your own row if it exists, **verify it** with [host-notify-probe.md](host-notify-probe.md)
+anyway (a host can change), and add a row when your runtime is missing. This
+table replaces per-vendor adapter documents for everything except the two
+supervisors above and the Codex delivery rule.
+
+| Runtime (`adapter_id`) | `notify_style` | Blocking cap | Background timeout | Host-specific caution |
+|---|---|---:|---|---|
+| Claude Code (`claude_code`) | exit-notify | 600 s | unbounded; stdout on exit | Running output is visible only by polling — that is not live-notify |
+| Codex (`codex`) | exit-notify | unmeasured | unmeasured | A background `TaskOutput` does **not** wake the session; blocking required |
+| DeepSeek TUI (`deepseek_tui`) | exit-notify | 600 s | 600 s | Shell does not preserve quotes — avoid spaces in argument values |
+| Antigravity (`antigravity`) | exit-notify | ~10 s then auto-async | no option; unbounded | Wakes the session when the background task completes |
+| opencode / GLM | exit-notify | blocking only (no background tool) | n/a | Accepts large timeout arguments; survival at that length unverified |
+| Grok Build TUI (`grok_build`) | exit-notify | 120 s default → auto-background; max 10 h | `timeout:0` = unlimited | Timeout kill takes children with it; host-reported exit code differed from the real one |
+| Kimi Code CLI (`kimi_cli`) | exit-notify | ~1 h job limit | unmeasured | No live stdout inject |
+| Qwen Code (`qwen_code`) | exit-notify | 600 s | no option; unbounded + completion notify | A streaming `monitor`-style tool that kills idle processes after 5–10 min must not carry ADP |
+
+Two conclusions this table already supports:
+
+1. **No runtime here is live-notify.** Treat `adp_live_notify.py` as the
+   exception that must be earned by a probe, never as a starting assumption.
+2. **A 600 s blocking cap is common.** Those hosts run the official loop with
+   the shorter `slice_s` from host-notify-probe.md §1b; they are not excluded
+   from the official path.
+
+### Profile slugs
+
+`--adapter-id` is a stable lowercase slug for the runtime, not the model:
+`claude_code`, `codex`, `kimi_cli`, `qwen_code`, `deepseek_tui`, `grok_build`,
+`antigravity`. Reuse the slug in this table if your runtime appears; otherwise
+mint `<runtime>_<surface>` and add the row. Do not encode the model version.
+
+`--interface` describes the surface this session runs on: `cli` (non-interactive
+command), `tui` (interactive terminal UI), `agent` (agentic runtime that plans
+and calls tools on its own), `build` (a build/CI-driven invocation with no
+interactive operator). When a runtime is both a TUI and agentic, `agent` is the
+routing-relevant truth.
+
+Report only what you can verify. `register.md`'s `unreported` sentinels are more
+useful than a guess.
+
 ## Durable handles
 
 Official ADP after the host-notify probe is one of two bundled watchers:
@@ -122,7 +165,7 @@ parent attached (Codex orphan) or cannot inject lines (Kimi), do not use it.
 `--resident` without `--max-runtime-s` remains a compatibility blocking call
 until the first event. Those hosts follow the timeout recovery below.
 
-Before invoking `lwar.py response REQUEST_ID --background` (or `--resident`), the adapter MUST retain:
+Before invoking `lwar.py response REQUEST_ID --resident` (or the live-notify-only `--background`), the adapter MUST retain:
 
 - the exact registration `request_id` emitted by its own `register` call
 - the exact explicit bus root, or the unchanged environment/cwd that resolves it

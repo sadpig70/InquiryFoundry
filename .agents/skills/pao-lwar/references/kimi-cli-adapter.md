@@ -109,7 +109,4 @@ again — do not restart `adp_watch`.
 ## What this does **not** change
 
 - `begin` / `complete --result-file` / fence tokens
-- `if_lwar.py` import: sibling `.agents/skills/if-core` only. Run
-  `python .agents/skills/if-lwar/scripts/if_lwar.py --self-test` (expect `ok`)
-- Visibility jail, no `question_id` mint
 - Do not use `--background` and `--resident` together

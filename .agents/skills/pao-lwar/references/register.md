@@ -33,7 +33,14 @@ session you are:
 | `--interface` | one of `cli` \| `tui` \| `agent` \| `build` | `agent` for an agentic CLI |
 | `--capability` | repeatable; what you can do (e.g. `coding`, `testing`) | omit if none apply |
 
-Introspect metadata already exposed by the runtime/session first. Do not invent a
+If your runtime already appears in the host capability matrix in
+[host-adapter.md](host-adapter.md), reuse the `adapter_id` slug listed there so
+routing stays consistent across sessions; that section also defines when to use
+each `--interface` value.
+
+Introspect metadata already exposed by the runtime/session first. Sources that
+usually carry the truth: the runtime's own `--version` output, an environment or
+system field naming the harness, and the session's declared model. Do not invent a
 specific identity you cannot attest: the explicit `Unreported ...` / `unreported_*`
 sentinels are truthful epistemic states and preserve autonomous bootstrap. Omit
 capabilities you cannot verify. Never claim a guessed vendor, model, capability,
@@ -58,15 +65,16 @@ Remember the `request_id` returned on stdout.
 
 ## Identity adoption
 
-Start adoption as **one background process** (host stdout-notify, `python -u`):
+Official start on every host — run this as **one blocking process** (`python -u`):
 
 ```bash
-python -u "<PAO_SKILL>/scripts/lwar.py" response REQUEST_ID --background --report-every 86400
+python -u "<PAO_SKILL>/scripts/lwar.py" response REQUEST_ID --resident --max-runtime-s 3000
 ```
 
 The process stays silent while OA has not written a response. After approval it
-adopts the identity, emits one `identity_adopted` line, and keeps watching.
-Do not poll `registration_pending` in the agent turn.
+adopts the identity, emits one `identity_adopted` line, and exits on the first
+task/control/fatal or the remaining cap. Do not poll `registration_pending` in
+the agent turn.
 
 | stdout `event` | Meaning |
 |---|---|
@@ -77,15 +85,24 @@ Do not poll `registration_pending` in the agent turn.
 | `registration_rejected` | Fail closed: inspect `reason`, do not retry the same request |
 | `adp_error` | Adoption or the watcher failed; stop and report |
 
-- Official start is `response REQUEST_ID --resident --max-runtime-s 3000`.
-  Both `--resident` and `--background` wait in-process for OA approval.
+- Both `--resident` and `--background` wait in-process for OA approval.
   If the resident cap elapses first it emits `registration_pending`
   (`reason=max_runtime`, exit 2); restart the same `response` command.
   After approval `--resident` emits `identity_adopted` and exits on the
   first task/control/fatal or the remaining cap (`idle_timeout`).
-- `--background` does not emit `registration_pending` while waiting. It is
-  not the official path.
-- `missing`/`stale`/`invalid` OA presence is not rejection; the process keeps waiting.
+- `python -u "<PAO_SKILL>/scripts/lwar.py" response REQUEST_ID --background --report-every 86400`
+  is the **live-notify-only** adoption path (probe `live-notify` **and**
+  `bg_timeout_50m=pass`). It keeps watching instead of exiting and does not emit
+  `registration_pending` while waiting. It is not the official path — see
+  SKILL.md §2 "Canonical commands by `notify_style`".
+- `missing`/`stale`/`invalid` OA presence is not rejection; the process keeps
+  waiting — but that wait is bounded (SKILL.md Rule 13). After the budget you
+  set, stop restarting and report the `request_id` to the operator instead of
+  looping forever against a dormant bus.
+- There is no LWAR-side registration withdrawal, by design. A pending request or
+  an approved-but-unadopted slot is cleared by OA with
+  `recover --reclaim-unadopted`; deleting your own request file would race OA's
+  `reconcile` and could strand an approved slot.
 - Preserve the exact `request_id` before starting the watcher. If that
   process dies before adoption, start the same `response` command once more
   against the same bus root. It never creates a new registration or generation.
