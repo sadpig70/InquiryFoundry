@@ -68,13 +68,24 @@ exact event; do not replace execution with a tutorial.
 
 ## 0.5 Session Bootstrap (cold start)
 
-**Register only if this session intends to do mailbox work.** A session told to
-read, review, evaluate, or diagnose this skill runs `doctor`, the host probe,
-and `oa-status` — and stops at step 5 without registering. Stopping there is the
-correct outcome for such a session, not a failure to complete the bootstrap:
+**Register only if this session intends to do mailbox work.** The trigger is the
+operator's instruction, not your own assessment of the situation:
+
+- `/pao-lwar`, "act as a PAO LWAR", "register as LWARn", or any instruction to
+  run/serve/join → **register.** This is the default. An absent, stale, or
+  missing OA does not change it, and neither does having nothing to do yet:
+  waiting for mailbox work *is* the job.
+- "read this skill", "review it", "evaluate it", "diagnose the bus" → run
+  `doctor`, the host probe, and `oa-status`, then **stop at step 5 without
+  registering** and report. That is the correct outcome for such a session, not
+  an incomplete bootstrap.
+
 `register` takes a real numbered slot that only OA can return, and a slot held
 by a session that will never watch its mailbox is indistinguishable, to OA, from
-a runtime that failed to start.
+a runtime that failed to start. But the reverse failure is worse and quieter: a
+session that was told to serve and silently declined to register leaves the
+operator waiting for an LWAR that never appears. When the instruction is
+ambiguous, register — an unwanted slot is one OA command to reclaim.
 
 Run this decision flow at the start of a session, before any other action:
 
