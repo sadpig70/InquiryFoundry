@@ -57,9 +57,17 @@ python "<PAO_SKILL>/scripts/lwar.py" register \
   --capability testing
 ```
 
-To request a specific slot, use `register 5`. If omitted, OA assigns the lowest available number.
+The optional positional `[number]` is a **specific slot request**: `register 5`
+asks for `LWAR5`. Omit it (the normal case) and OA assigns the lowest available
+number. It is not a count, a priority, or a generation.
 
-The request is stamped with the bundle's `runtime_version` automatically; OA rejects a mismatched runtime fail-closed (`runtime_version_mismatch`), so both sides must run the same bundle version.
+The request is stamped with the bundle's `runtime_version` automatically; OA rejects a mismatched runtime fail-closed (`runtime_version_mismatch`), so both sides must run the same bundle version. Check your own with `pao.py info` before asking why a registration was refused.
+
+The request also carries `behavior_contract: lwar-runtime.v2-adp` — the name of
+the loop contract this bundle implements (identity adoption, fenced
+`begin`/`complete`, one terminal result per claim, watcher-owned heartbeats). It
+is stamped for you; you never set or negotiate it. A future contract revision
+would change this string, which is how OA can tell two loop generations apart.
 
 Remember the `request_id` returned on stdout.
 

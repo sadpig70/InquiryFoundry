@@ -70,6 +70,25 @@ failure analysis, integration, conservative verification). Meaningful
 disagreement is signal, not noise; a result may carry majority and minority
 views, open issues, and what evidence would change them.
 
+## Reporting a blocker
+
+"Report the exact event" means these five lines, not a paraphrase. Use them for
+a failed `doctor`, an unknown watcher event, `adp_error`, an identity mismatch,
+or a wait you are abandoning under a bound:
+
+```text
+what:      the event / exit code / error string, verbatim
+where:     the command you ran, with its flags
+identity:  lwar_id + instance_id + generation, or the request_id before adoption
+state:     what the bus said (oa-status, lwar status) at that moment
+did:       what you did about it, and what you deliberately did not do
+```
+
+Verbatim matters because the recipient — OA or the operator — has to
+distinguish, say, `heartbeat_identity_mismatch` from `identity_mismatch`, and a
+summary loses exactly that. If a claim is held, the report never replaces the
+terminal result: submit the result first, then report.
+
 ## Safety and human authority
 
 In high-risk domains (finance, medical, legal, security, safety) PAO is not a

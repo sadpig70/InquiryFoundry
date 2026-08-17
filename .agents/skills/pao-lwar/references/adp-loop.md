@@ -201,6 +201,24 @@ wrapper that reports `returncode`) rather than trusting the tool result.
 Every watcher event includes the absolute `identity_file`. Heartbeats are written
 by the watcher itself on every poll—the agent never emits or edits them.
 
+One stdout line per event, shaped like these (fields trimmed to the ones you
+act on; `adp-event.schema.json` is authoritative):
+
+```json
+{"event":"identity_adopted","identity_file":"D:\\...\\var\\identities\\lwar-instance-….json","lwar_id":"LWAR3"}
+{"event":"task_received","identity_file":"…","invocation_id":"invocation-…","invocation_epoch":7,
+ "task":{"task_id":"task-…","claim_token":"claim-…","execution_id":"execution-…","cwd":"…","timeout_s":300}}
+{"event":"control","command":"shutdown","identity_file":"…","message":{"control_id":"control-…"}}
+{"event":"idle_timeout","reason":"max_runtime","identity_file":"…"}
+{"event":"registration_pending","request_id":"lwar-reg-…","reason":"max_runtime","action":"restart_response"}
+{"event":"adp_error","error":"…","identity_file":"…","action":"stop"}
+```
+
+The fence handles you must carry from `task_received` into `begin` are
+`task.claim_token`, `task.execution_id`, and `invocation_id`. A
+`recovered_claim: true` field means the same durable claim is being redelivered
+— keep the original `claim_token`.
+
 Error discipline. `adp_error` (exit 30) means the watcher itself hit a fatal condition (e.g. the identity no longer verifies) and exited: **stop this ADP run and report** — do not blindly re-invoke the same command. The only case for a bounded retry is a *transient* error you have reason to believe is self-clearing (e.g. a momentary file lock); if you choose to retry, cap it at **3 consecutive identical `adp_error`s**, then stop and escalate to OA. Never loop on an unresolved error.
 
 Cancel reaching an agent mid-execution. Under **live-notify** the watcher keeps
@@ -227,10 +245,17 @@ mailbox/LWARn/
     control_claimed/   # transient watcher claim area
     cancelled/         # cancel tombstones ({task_id}.json)
     leases/            # execution leases
-    work/              # LWAR working files
-    heartbeat.json
+    executions/        # execution records ({execution_id} fence state)
+    work/              # LWAR working files, per task_id
+    heartbeat.json     # written by the watcher only
+    invocation.json    # current watcher invocation epoch
+    watcher.pid.json   # present while a watcher process owns this mailbox
     archive/  failed/  dead/  quarantine/
 ```
+
+The watcher owns `heartbeat.json`, `invocation.json`, `watcher.pid.json`,
+`executions/`, and the atomic moves between the queue directories. The agent
+writes only under `work/{task_id}/` and reaches everything else through the CLI.
 
 All writes use temporary file → flush/fsync → `os.replace`. Task receipt is finalized by the atomic move `incoming → claimed`.
 

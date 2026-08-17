@@ -13,7 +13,8 @@ Replace `<PAO_SKILL>` with this skill's folder (SKILL.md §0).
 - Do not use paths, commands, or network access that the task does not allow.
 - Perform exact verification through real commands and code, and record evidence under `evidence`.
 - **Emit `status=succeeded` only when every `completion_criterion` has been independently verified** by a real command/check whose evidence you recorded. If any criterion is unmet or you cannot verify it within the task's authority, emit `blocked` (unsatisfiable/insufficient authority) or `failed` — never optimistic `succeeded`. `exit_code=0` from a build/test is not by itself success; the OA re-checks, and an unverified `succeeded` is a protocol violation on this side.
-- Write the draft result to `mailbox/LWARn/work/{task_id}/result.json` (path relative to the bus root).
+- Write the draft result to `mailbox/LWARn/work/{task_id}/result.json` (path relative to the bus root). `begin` already created an `interrupted` draft there and printed its absolute path as `result_draft_path` — **use that value** rather than assembling the path yourself, which is where cwd-relative mistakes come from.
+- Some hosts kill a streaming/monitor-style tool after a few idle minutes. Never carry ADP or a long task on such a tool: the process dies mid-claim, the heartbeat stops, and OA sees a stale runtime.
 
 ## Draft result format
 
@@ -86,6 +87,14 @@ Artifacts: declare them as path strings (relative paths resolve against the task
 Before snapshotting, `complete` deterministically scans result summary/evidence and
 artifact path/content for the registered runtime/model/vendor identifiers. A leak
 is a hard rejection; rewrite the public artifact/result using only the `LWARn` alias.
+Watch for identifiers you did not type: tool output headers, banners, log
+prefixes, and paths under a runtime-named home directory all reach `evidence` and
+artifacts if you paste them verbatim.
+
+The scan is a substring match over your registered profile terms, so the
+`Unreported Runtime` / `unreported_vendor` sentinels are matched too. If a
+sentinel-registered LWAR writes ordinary prose that happens to contain one of
+those phrases, `complete` rejects it — reword rather than assuming a bug.
 
 `next_action` is advisory and OA does not branch on it. Use `validate` for a
 terminal result OA should review (the default the tool writes) and `none` when

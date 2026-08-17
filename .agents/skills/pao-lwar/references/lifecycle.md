@@ -98,7 +98,20 @@ python "<PAO_SKILL>/scripts/lwar.py" state deregistered --identity-file IDENTITY
 
 ## Rules
 
-- Transitions follow `on → draining → off → deregistered`. Request `deregistered` only from `off`.
+- The clean-retirement sequence is `on → draining → off → deregistered`, and
+  `deregistered` may only be requested from `off`. The full legal graph is
+  wider than that one path — the registry also allows `on → off` directly,
+  `draining → on`, and `off → on` — which is what makes a paused slot
+  resumable. Use the linear sequence when retiring; use the return edges when
+  coming back:
+
+  | From | Legal next |
+  |---|---|
+  | `on` | `draining`, `off` |
+  | `draining` | `on`, `off` |
+  | `off` | `on`, `deregistered` |
+
+  Anything not in this table is rejected as an illegal transition.
 - Lifecycle commands are **requests**: the registry state changes only after OA runs `reconcile` and approves. Do not assume a state is final until a status inspection confirms it.
 - `draining`: finish current work, accept no new tasks. Who ends it depends on who started it: after an **OA-initiated** `control:drain`, keep watching until `shutdown` (OA owns the stop); request `off` yourself only in the **self-initiated** context-exhaustion handoff below.
 - Deregistration frees the numeric slot; a future reuse of the slot bumps `generation`, and your old identity becomes permanently stale.
@@ -128,7 +141,7 @@ resume its watcher or reuse the identity file.
 
 ## Context-exhaustion handoff
 
-Session context is finite; running out mid-claim would violate the terminal-result rule. Trigger this handoff only on an **objective** exhaustion signal — an explicit runtime context/token warning, or a measured token budget crossing a high threshold (e.g. ~90% of the window). Elapsed wall-clock time, many idle slices, or a subjective sense of "enough has happened" are **not** exhaustion and must not trigger it (§1.3) — that is the daemon-quitting-because-it-feels-finished bug. When a genuine exhaustion signal fires, hand off instead of dying:
+Session context is finite; running out mid-claim would violate the terminal-result rule. Trigger this handoff only on an **objective** exhaustion signal — an explicit runtime context/token warning, or a measured token budget crossing a high threshold (e.g. ~90% of the window). Elapsed wall-clock time, many idle slices, or a subjective sense of "enough has happened" are **not** exhaustion and must not trigger it (SKILL.md §1 Rule 6) — that is the daemon-quitting-because-it-feels-finished bug. When a genuine exhaustion signal fires, hand off instead of dying:
 
 1. Request `draining` (`state draining`) so no new task is claimed.
 2. If a task is claimed, finish or stop it and submit its terminal result (`failed` or `blocked` with the reason is acceptable — never abandon it silently).

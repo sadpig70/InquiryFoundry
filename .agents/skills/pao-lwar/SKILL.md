@@ -2,10 +2,16 @@
 name: pao-lwar
 description: "PAO LWAR (standalone, self-contained) — autonomously bootstrap, self-register, adopt an approved identity, and stay in the official ADP resident loop so OA mailbox send is the only later communication. Bundles the PAO runtime; installs by folder copy alone — no pip or plugin. Load on /pao-lwar or whenever a session is told to act as a PAO LWAR."
 user-invocable: true
-argument-hint: "start | info | doctor | oa-status | register [number] | response --resident | adp-exit | adp-live | status | on | drain | off | retire | unregister"
+argument-hint: "start (agent action, not a CLI verb) | info | doctor | oa-status | register [number] | response --resident | adp | adp-exit | adp-live | adp-stop | adp-wait | status | on | drain | off | retire | unregister"
 ---
 
-# PAO-LWAR Skill v1.17 (standalone)
+# PAO-LWAR Skill v1.18 (standalone)
+
+Skill version (`v1.18`) and runtime protocol version (`1.4.2`, reported by
+`pao.py info` / `doctor`) move independently. The **protocol** version is the
+compatibility boundary — `register` stamps it and OA rejects a mismatch
+fail-closed. The **skill** version tracks this document set. "Re-read a
+reference if the runtime version changes" means the protocol version.
 
 ## Definitions
 
@@ -23,7 +29,7 @@ This skill bundles the full PAO runtime (`scripts/`, `pao_runtime/`, `schemas/`)
 python "<PAO_SKILL>/scripts/lwar.py" register
 ```
 
-Bus root resolution before identity adoption (`doctor`, `register`, `response`) is explicit `--root` > `PAO_ROOT` > a **`.pao/` folder under the current directory**. Adoption persists the canonical `bus_root` in the identity. Afterwards, `status`, `state`, `complete`, and ADP derive the bus from `--identity-file` when neither `--root` nor `PAO_ROOT` is supplied. An explicit/env root may repeat the identity root but a mismatch fails closed before touching the conflicting bus. Legacy identities under `<root>/var/identities/` derive the root from that canonical location. Task execution still happens in each task's own `cwd`; only the bus location is identity-bound. The bus requires a **single-host local filesystem**. Run commands with the current runtime's Python executable — do not assume `python` and `python3` resolve to the same interpreter.
+Bus root resolution before identity adoption (`doctor`, `register`, `response`) is explicit `--root` > `PAO_ROOT` > a **`.pao/` folder under the current directory**. Adoption persists the canonical `bus_root` in the identity. Afterwards, `status`, `state`, `complete`, and ADP derive the bus from `--identity-file` when neither `--root` nor `PAO_ROOT` is supplied. An explicit/env root may repeat the identity root but a mismatch fails closed before touching the conflicting bus. `<root>/var/identities/<instance_id>.json` is the canonical location adoption writes to; an identity stored there derives its root from that path even if its record predates the stored `bus_root` field. That the location is canonical does **not** make its contents adoptable — see §0.5. Task execution still happens in each task's own `cwd`; only the bus location is identity-bound. The bus requires a **single-host local filesystem**. Run commands with the current runtime's Python executable — do not assume `python` and `python3` resolve to the same interpreter. Always invoke the wrapper scripts **through that interpreter** (`python "<PAO_SKILL>/scripts/lwar.py" …`), never by executing the file directly: their `#!/usr/bin/env python3` shebang is ignored on Windows and may select a different interpreter elsewhere.
 
 Before registering or starting ADP, run the pre-flight check and stop on failure:
 
@@ -253,7 +259,7 @@ frequency changes.
 | `info` | `pao.py info` |
 | `doctor` | `pao.py doctor --role lwar` |
 | `oa-status` | `lwar.py oa-status` before adoption; add `--identity-file <abs>` after adoption |
-| `register [number]` | `lwar.py register [number] --runtime-name … --model … --adapter-id … --vendor-family … --interface …` (register.md lists the required flags) |
+| `register [number]` | `lwar.py register [number] --runtime-name … --model … --adapter-id … --vendor-family … --interface …` (register.md lists the required flags). `[number]` requests a **specific slot** (`register 5` → `LWAR5`); omit it and OA assigns the lowest available |
 | `response` | exit-notify: `lwar.py response REQUEST_ID --resident --max-runtime-s 3000`. live-notify: `response REQUEST_ID --background` |
 | `adp` / `adp-exit` / `adp-kimi` | `lwar.py adp --identity-file <abs>` or `scripts/adp_exit_notify.py` — exit on event or 50m |
 | `adp-live` | `lwar.py adp-live --identity-file <abs>` or `scripts/adp_live_notify.py` — stay up, emit each event |
@@ -269,6 +275,21 @@ Every LWAR-side exit code is collected in one table in
 [references/lifecycle.md](references/lifecycle.md) ("Exit code dictionary").
 Branch on the stdout JSON `event`; treat the code as corroboration.
 
-JSON Schemas for every bus message live in [schemas/](schemas/).
+`conformance/` is an OA-side calibration pack (`factory.conformance.v1`): probe
+task templates a Factory verifier publishes to measure model adherence. An LWAR
+never reads, publishes, or self-runs it, and its `.task.json` templates are not
+TaskContracts — a real task arrives only through the mailbox.
+
+`PAO_LWAR_IDENTITY` may hold the absolute identity path as a fallback for the
+ADP scripts when `--identity-file` is omitted. Prefer the explicit flag; the
+environment variable is convenience, not a second source of identity.
+
+JSON Schemas for every bus message live in [schemas/](schemas/). The ones an
+LWAR meets directly are `registration-request` / `registration-response`,
+`identity`, `heartbeat`, `invocation`, `lease`, `execution`, `task`, `control`,
+`adp-event`, `result`, and `lifecycle-request` / `lifecycle-response`; the rest
+(`registry-state`, `tombstones`, `task-ledger`, `validation-decision`,
+`oa-presence`, `oa-writer-lease`, `audit-event`, and the routing/canary set)
+belong to OA and are validated on its side of the bus.
 The runtime validates them at every registration, lifecycle, mailbox, heartbeat,
 lease, task, control, result, and identity trust boundary.

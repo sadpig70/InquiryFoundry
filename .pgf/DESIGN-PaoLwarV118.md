@@ -1,6 +1,6 @@
 # PAO-LWAR v1.18 개선 설계
 
-**Status** P1–P5 done (ProbeScriptUpgrade 제외), P6 pending · **Target** `.agents/skills/pao-lwar` v1.17 (runtime protocol 1.4.2)
+**Status** P1–P6 done — `ProbeScriptUpgrade` 만 designing · **Target** `.agents/skills/pao-lwar` v1.17 (runtime protocol 1.4.2)
 **Source** `_workspace/lwar-skill-review/integrated-review.md` (8개 런타임 통합 리뷰, D1–D37)
 **추가 근거** 2026-08-16 OA 세션 버스 실증 (R1, R2 — §2)
 **계약 검증** 2026-08-16 `task-pao-ack-20260816` — exit-notify 계약 end-to-end 1회 통과 (§10)
@@ -91,7 +91,7 @@ POLICY = {
 ## 5. Execution Tree
 
 ```text
-PaoLwarV118 // pao-lwar v1.17 → v1.18 @v:0.2 (in-progress)
+PaoLwarV118 // pao-lwar v1.17 → v1.18 @v:1.0 (done)
     P1_CanonicalPath // 공식 경로 단일화 — S0 전부의 공통 뿌리 (done) #D1 #D2 #D3
         NotifyStyleTable // notify_style 별 canonical 명령 단일 표 신설 (done)
             # Target: SKILL.md §2 (새 절 "Canonical commands by notify_style")
@@ -189,15 +189,15 @@ PaoLwarV118 // pao-lwar v1.17 → v1.18 @v:0.2 (in-progress)
         NextActionSpec // next_action 허용값 명세 (done) — validate | none, OA 미소비
             # 현재 스키마는 non-empty string, 예시는 "validate" 하나뿐
             # OA 소비 방식 미정 — 값 집합 확정 필요
-    P6_Hygiene // 위생 묶음 (in-progress) #D18 #D20~D37
-        ArgumentHintFix // argument-hint 에 adp|adp-stop|adp-wait 추가, start 표기 정정 (in-progress)
-        DanglingRefFix // lifecycle.md:89 의 (§1.3) 를 실제 Rule 번호로 (in-progress)
-        LegacyIdentityWording // SKILL.md:26 "Legacy identities" → 현행 정본 위치로 재서술 (in-progress)
-        ConformanceNote // conformance/ 용도 1문단 + README (in-progress)
+    P6_Hygiene // 위생 묶음 (done) #D18 #D20~D37
+        ArgumentHintFix // argument-hint 에 adp|adp-stop|adp-wait 추가, start 표기 정정 (done)
+        DanglingRefFix // (§1.3) → SKILL.md §1 Rule 6 (done)
+        LegacyIdentityWording // "Legacy identities" → 현행 정본 위치로 재서술 (done)
+        ConformanceNote // conformance/ 용도 1문단 + README (done)
             # 현재 SKILL.md·references 전체에 "conformance" 문자열 0건 (검증됨)
-        MailboxLayoutSync // executions/ · invocation.json · watcher.pid.json 반영 (in-progress)
-        LifecycleGraphFix // 실제 전환 그래프(on→off 직행, draining→on, off→on) 반영 (in-progress)
-        MiscDocPack // 나머지 소항목 일괄 (in-progress)
+        MailboxLayoutSync // executions/ · invocation.json · watcher.pid.json 반영 (done)
+        LifecycleGraphFix // 실제 전환 그래프 표 (done)
+        MiscDocPack // 나머지 소항목 일괄 (done)
             # PAO_LWAR_IDENTITY 폴백, schemas 목차, watcher stdout 이벤트 예시,
             # 상태 전이도, 보고 템플릿, shebang python3, behavior_contract 설명,
             # skill/protocol 버전 관계, register [number] 의미, blind-safe 강조,
@@ -369,7 +369,7 @@ P4_runtime -> AI_mirror(pao_lwar_runtime, pao_oa_runtime)
 | 3 | LWAR3 ack probe | **done** (2026-08-16) — `task-pao-ack-20260816` succeeded, semantic `accepted`, LWAR3가 `complete` 후 watcher 재기동해 `watching` 복귀 |
 | 4 | **P4** 런타임 — 막힌 슬롯이 무해하므로 급하지 않음 | **done** (2026-08-16) — §11 |
 | 5 | **P5** 결과·오류 계약 | **done** (2026-08-16) — §12 |
-| 6 | P6 위생 | 대기 |
+| 6 | **P6** 위생 + `v1.18` 확정 | **done** (2026-08-16) — §13 |
 
 판단 근거: **지금의 실제 리스크는 "다음 벤더 세션이 잘못된 워처를 띄우는 것"이지 "슬롯 2개가 잠긴 것"이 아니다.** 문서 층을 먼저 닫고 런타임 변경은 검증 뒤에 한다.
 
@@ -532,3 +532,39 @@ codex P1이 지적한 "무재시도는 유실, 무조건 재시도는 중복"의
 - `PermissionGateStatus` — 호스트 권한 게이트 거부는 `blocked` + evidence에 거부된 명령. 무인 루프에서 lease 만료 방치보다 낫다
 - `NextActionSpec` — 런타임 실제 값은 `validate` | `none`, **OA는 분기하지 않는다**(advisory). 코드 확인 후 그대로 명세화
 - `CancelLimitNote` — P1에서 조기 완료
+
+---
+
+## 13. P6 실행 기록 · 설계 마감 (2026-08-16)
+
+P6 개별 항목은 위생이지만, 묶어 보면 **"문서가 자기 번들을 잘못 기술하는"** 한 부류였다.
+
+| 노드 | 고친 불일치 |
+|---|---|
+| ArgumentHintFix | `argument-hint`에 `adp`/`adp-stop`/`adp-wait` 누락, CLI verb가 아닌 `start`는 그냥 있었음 → `start (agent action, not a CLI verb)` |
+| DanglingRefFix | `lifecycle.md`가 존재하지 않는 `(§1.3)` 인용 → `SKILL.md §1 Rule 6` |
+| LegacyIdentityWording | "Legacy identities"가 **현행** 정본 위치를 가리켜 오판 유도 → canonical location으로 재서술 + "정본이라고 채택 가능한 건 아니다" 명시 |
+| ConformanceNote | 번들에 있으나 어느 문서도 언급 0건이던 `conformance/` → SKILL.md 한 문단 + `conformance/README.md` 신설 (OA측 캘리브레이션 팩, LWAR는 실행 안 함) |
+| MailboxLayoutSync | 실제 존재하는 `executions/` · `invocation.json` · `watcher.pid.json` 누락 → 반영 + 소유권(watcher vs agent) 명시 |
+| LifecycleGraphFix | 선형 서술이 실제 그래프보다 좁음 → 전이 표(`on→off` 직행, `draining→on`, `off→on`) 추가. 이 복귀 간선이 slot 재개를 가능하게 한다 |
+| MiscDocPack | `PAO_LWAR_IDENTITY` 폴백, schemas 목차(LWAR용/OA용 구분), watcher stdout 이벤트 JSON 예시, shebang 주의, `behavior_contract` 설명, `register [number]` 의미, blind-safe(툴 헤더·경로 유입), `identity_leaks` 센티널 오검출, monitor류 idle-kill 금지, `result_draft_path` 사용, 보고 템플릿 5줄 |
+
+### 버전 확정
+
+`SKILL.md` 헤더를 **v1.18**로 올리고, **스킬 버전과 프로토콜 버전의 관계**를 명시했다 — 호환 경계는 protocol `1.4.2`(register가 스탬프, OA가 fail-closed 거부)이고, 스킬 버전은 이 문서 세트를 추적한다. "runtime version이 바뀌면 재독"은 protocol 쪽을 가리킨다 (grok 1.3).
+
+버전을 P6 **뒤**에 올린 이유: 헤더가 `v1.17`인데 내용이 다르면 벤더 세션이 "v1.17을 읽었다"고 보고하면서 다른 계약을 수행한다. 버전 문자열은 위생이 아니라 식별자다.
+
+### 미완 — `ProbeScriptUpgrade` (designing 유지)
+
+P2·P6 통틀어 유일하게 남긴 노드. `host_notify_probe.py`에 타임스탬프를 출력해 판정 근거를 세션 기억 밖에 남기자는 제안(deepseek F4)이다. 남긴 근거:
+
+1. **유일한 코드 변경 항목**이고, 문서 계약이 검증된 지금 굳이 스크립트 표면을 늘릴 이유가 약하다.
+2. `§1c stdout_on_kill`의 fail-closed 규칙이 **판정 불가 상황을 이미 안전한 쪽으로 흡수**한다 — 근거를 못 남기면 축소 슬라이스로 강등되므로, 타임스탬프가 없어서 생기는 급성 위험이 없다.
+3. 실행하려면 양 번들 동시 반영 + probe 재검증이 필요한데, 그 비용을 지금 지불할 근거가 없다.
+
+되살릴 조건: live-notify로 판정된 호스트가 처음 등장하거나, probe 판정이 실제로 틀린 사례가 관측되면.
+
+### 설계 상태
+
+`PaoLwarV118` 루트 `(done)`. D1–D37 중 이번 범위에서 다루기로 한 항목과 R1·R2 전부 종료.

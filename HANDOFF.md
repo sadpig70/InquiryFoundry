@@ -28,10 +28,10 @@
 | 역할 | 스킬 | 비고 |
 |---|---|---|
 | OA (기본) | `.agents/skills/pao-oa/SKILL.md` v1.37 | `python .agents/skills/pao-oa/scripts/oa.py` + `.pao`만 |
-| LWAR | `.agents/skills/pao-lwar/SKILL.md` (헤더는 아직 **v1.17**, 내용은 v1.18 진행분 반영) | 벤더 세션에서 `/pao-lwar` |
+| LWAR | `.agents/skills/pao-lwar/SKILL.md` **v1.18** | 벤더 세션에서 `/pao-lwar` |
 | IF overlay | `if-oa`, `if-lwar`, `if-core`, `if-generate`, `if-contrarian`, `if-judge` | |
 
-권위 설계: IF는 `.pgf/DESIGN-InquiryFoundry.md` v0.2.3. **스킬 개선은 `.pgf/DESIGN-PaoLwarV118.md`.**
+권위 설계: IF는 `.pgf/DESIGN-InquiryFoundry.md` v0.2.3. 스킬 개선 `.pgf/DESIGN-PaoLwarV118.md`은 **완료**(`ProbeScriptUpgrade` 1건만 `designing`).
 
 Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.exe`). PS 5.1 금지.
 
@@ -121,12 +121,9 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 
 ## 8. 다음 작업 (우선순위)
 
-1. **P5/P6** (`.pgf/DESIGN-PaoLwarV118.md`) — 결과·오류 계약(`complete` 멱등성, exit code 사전, 권한 게이트 `blocked`) + 위생 묶음. 전부 문서.
-2. **`ProbeScriptUpgrade`** — P2의 유일한 미완 노드(`host_notify_probe.py` 타임스탬프 출력). `designing` 유지 중.
-3. **SKILL.md 버전 헤더** — 아직 `v1.17`인데 내용은 v1.18 진행분. P5/P6 완료 시 `v1.18`로 올릴지 판단.
-4. **벤더 다중 LWAR** — 현재 1대(LWAR3). 확장하려면 각 벤더 세션에서 정욱님이 `/pao-lwar` 실행 필요. OA는 못 함. 등록 후 OA가 `reconcile` → ack probe로 검증.
-5. live2 `review.yaml` 인간 adopt — 기계 금지.
-6. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
+1. **벤더 다중 LWAR** — 현재 1대(LWAR3). 확장하려면 각 벤더 세션에서 정욱님이 `/pao-lwar` 실행 필요. OA는 못 함. 등록 후 OA가 `reconcile` → ack probe로 검증.
+2. live2 `review.yaml` 인간 adopt — 기계 금지.
+3. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
 
 OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금지.
 
@@ -151,6 +148,6 @@ OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금�
 1. HANDOFF.md + AGENTS.md + CLAUDE.md
 2. 역할 OA → pao-oa SKILL.md
 3. doctor --role oa → PAO_OA_ID mint → presence → reconcile → status
-4. 스킬 작업이면 .pgf/DESIGN-PaoLwarV118.md 가 권위 (P5/P6 남음)
+4. 스킬 작업이면 .pgf/DESIGN-PaoLwarV118.md 가 권위 (P1-P6 done)
 5. IF 작업이면 .pgf/DESIGN-InquiryFoundry.md 가 권위
 ```
