@@ -10,11 +10,12 @@
 ## 1. Git
 
 - Remote: https://github.com/sadpig70/InquiryFoundry (public)
-- **현재 브랜치: `pao-lwar-v1.18`** — `main`보다 3커밋 앞섬. **push 안 함** (정욱님 지시 대기)
+- Branch: `main` tracking `origin/main`. **HEAD = `2cad9a9`, push 완료** (워킹 트리 clean)
   - `90720c6` pao-lwar: unify the official ADP path on exit-notify (v1.17 doc debt)
   - `722b480` pao: add fenced recovery for slots OA could not reclaim
   - `062fae4` pgf: add the v1.18 design driving the pao-lwar changes
-- `main`은 `dee5df2` 그대로. merge/push는 정욱님 판단.
+  - `2cad9a9` handoff: record the v1.18 session state
+- 작업 브랜치 `pao-lwar-v1.18`은 fast-forward merge 후 삭제됨. 되돌릴 단위는 위 4개 커밋.
 
 올리지 말 것: `.pao/`, `.if/`, `_workspace/`, `.env`, identity, mailbox. (`.gitignore`가 이미 처리)
 
@@ -120,13 +121,12 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 
 ## 8. 다음 작업 (우선순위)
 
-1. **`pao-lwar-v1.18` 브랜치 merge/push 판단** — 정욱님 결정 대기. `pytest tests/pao tests/if` 64 passed, doctor healthy 상태에서 커밋됨.
-2. **P5/P6** (`.pgf/DESIGN-PaoLwarV118.md`) — 결과·오류 계약(`complete` 멱등성, exit code 사전, 권한 게이트 `blocked`) + 위생 묶음. 전부 문서.
-3. **`ProbeScriptUpgrade`** — P2의 유일한 미완 노드(`host_notify_probe.py` 타임스탬프 출력). `designing` 유지 중.
-4. **SKILL.md 버전 헤더** — 아직 `v1.17`인데 내용은 v1.18 진행분. P5/P6 완료 시 `v1.18`로 올릴지 판단.
-5. **벤더 다중 LWAR** — 현재 1대(LWAR3). 확장하려면 각 벤더 세션에서 정욱님이 `/pao-lwar` 실행 필요. OA는 못 함. 등록 후 OA가 `reconcile` → ack probe로 검증.
-6. live2 `review.yaml` 인간 adopt — 기계 금지.
-7. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
+1. **P5/P6** (`.pgf/DESIGN-PaoLwarV118.md`) — 결과·오류 계약(`complete` 멱등성, exit code 사전, 권한 게이트 `blocked`) + 위생 묶음. 전부 문서.
+2. **`ProbeScriptUpgrade`** — P2의 유일한 미완 노드(`host_notify_probe.py` 타임스탬프 출력). `designing` 유지 중.
+3. **SKILL.md 버전 헤더** — 아직 `v1.17`인데 내용은 v1.18 진행분. P5/P6 완료 시 `v1.18`로 올릴지 판단.
+4. **벤더 다중 LWAR** — 현재 1대(LWAR3). 확장하려면 각 벤더 세션에서 정욱님이 `/pao-lwar` 실행 필요. OA는 못 함. 등록 후 OA가 `reconcile` → ack probe로 검증.
+5. live2 `review.yaml` 인간 adopt — 기계 금지.
+6. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
 
 OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금지.
 
