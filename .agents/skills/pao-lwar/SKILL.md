@@ -265,6 +265,10 @@ frequency changes.
 | `retire` | repeatedly run `lwar.py retire --identity-file <abs>` until `lwar_retired`; OA reconciles each requested transition |
 | `unregister` | `lwar.py state deregistered` (only from `off`, after OA reconcile) |
 
+Every LWAR-side exit code is collected in one table in
+[references/lifecycle.md](references/lifecycle.md) ("Exit code dictionary").
+Branch on the stdout JSON `event`; treat the code as corroboration.
+
 JSON Schemas for every bus message live in [schemas/](schemas/).
 The runtime validates them at every registration, lifecycle, mailbox, heartbeat,
 lease, task, control, result, and identity trust boundary.

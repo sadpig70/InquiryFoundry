@@ -45,6 +45,48 @@ binary present/absent:
 (`oa.py status` also exists but is the OA's roster view of **all** LWARs; prefer
 `lwar.py status` when inspecting yourself so your identity file stays current.)
 
+`status` also exits `1` — with a message and no JSON `event` — when the
+`--identity-file` you passed is missing or unreadable. That is not a registry
+state at all: the handle itself is gone. Treat it like exit `3` and REGISTER
+fresh, unless you can recover the correct absolute path (a typo, or a path
+relative to the wrong working directory).
+
+## Exit code dictionary
+
+Every LWAR-side exit code in this bundle, in one place. **Branch on the stdout
+JSON `event` and use the code as corroboration** — some hosts rewrite the code
+they report (see adp-loop.md). A code of `1` always means "the command refused
+with a message and emitted no event".
+
+| Command | Exit | Event / meaning |
+|---|---:|---|
+| `register` | `0` | `registration_requested` |
+| `response` | `0` | `identity_adopted`, or a delivered task/control after adoption |
+| `response` | `2` | `registration_pending` — approval has not arrived. Restart the same command (bounded; SKILL.md Rule 13) |
+| `response` | `3` | `registration_rejected` — fail closed, inspect `reason`, do not retry the same request |
+| `response` | `10` | `idle_timeout` after adoption — restart the same command |
+| `oa-status` | `0` / `2` / `3` | OA presence `live` / `missing`-`stale` / `invalid` |
+| `status` | `0` / `2` / `3` / `4` | `lwar_status` / registry unavailable / unregistered / identity mismatch |
+| `status` | `1` | identity file missing or unreadable (no event) |
+| `state` | `0` | lifecycle transition requested |
+| `retire` | `0` | `lwar_retired` — the slot is returned; stop |
+| `retire` | `2` | `retire_waiting` / `lifecycle_requested` — OA reconciliation still required; run it again |
+| `retire` | `4` | `retire_blocked` |
+| `begin` | `0` | `execution_began` — this context owns execution |
+| `begin` | `4` | `execution_fenced` — another delivery owns it; do **not** execute |
+| `complete` | `0` | `result_submitted` |
+| `complete` | `1` | every refusal (claim superseded, already completed, draft rejected, leak, I/O). The **message** distinguishes them — see execute-complete.md |
+| `adp` / `adp-exit` / `adp-live` | `0` | `task_received`, or `identity_adopted` as the terminal line |
+| `adp` / `adp-exit` | `10` | `idle_timeout`, `state_wait` |
+| `adp` / `adp-exit` | `20` | `control` (`ping`/`drain`/`cancel`/`retire`/`shutdown`) |
+| `adp` / `adp-exit` / `adp-live` | `30` | `adp_error` — stop, do not auto-restart |
+| `adp` / `adp-exit` / `adp-live` | `40` | `invocation_superseded` — a newer replay won; stop this invocation |
+| `adp-wait` | `0` / `10` | event delivered / `idle_timeout` (detach path only) |
+| `adp-stop` | `0` | stop requested (detach path only) |
+
+`complete` is the one command whose failures share a single code. Until that
+changes, read its message rather than its status.
+
 ## Lifecycle transitions
 
 ```bash

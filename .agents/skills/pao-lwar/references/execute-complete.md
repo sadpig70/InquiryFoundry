@@ -41,7 +41,14 @@ Choose the status by situation — do not guess:
 | you saw a `control:cancel` for this task while executing it | `cancelled` |
 | your own execution overran the task's `timeout_s` | `timed_out` |
 | the task payload or an event was malformed / a protocol invariant broke | `protocol_error` |
+| the **host harness** refused a command, read, or write the task itself allows (a permission gate with no operator present to approve it) | `blocked` |
 | you must stop mid-task without a `failed`/`blocked` verdict (context-exhaustion handoff, or a `control:shutdown` arrived mid-execution) | `interrupted` |
+
+A host permission gate is `blocked`, not a reason to wait: name the refused
+command in `evidence` and submit. An unattended loop that sits on an approval
+prompt holds its claim until the lease expires, which costs an attempt and tells
+OA nothing about why. A terminal `blocked` with the exact refusal is recoverable
+information; silence is not.
 
 `interrupted` is also written by OA's reconciler for a vanished LWAR (lease expiry); either origin is legitimate. When two apply (e.g. a cancel during an overrun), prefer the more specific cause (`cancelled` over `timed_out`).
 
@@ -80,7 +87,35 @@ Before snapshotting, `complete` deterministically scans result summary/evidence 
 artifact path/content for the registered runtime/model/vendor identifiers. A leak
 is a hard rejection; rewrite the public artifact/result using only the `LWARn` alias.
 
-Handling a `complete` that does not report `result_submitted`:
+`next_action` is advisory and OA does not branch on it. Use `validate` for a
+terminal result OA should review (the default the tool writes) and `none` when
+no follow-up is implied. Do not invent instructions for OA in this field.
+
+## An interrupted submission
+
+"Exactly one terminal result" is a property of the **claim**, not a limit on how
+many times you may call `complete`. The claimed task file is consumed by a
+successful submission, so a second call cannot produce a second result — it is
+refused. That makes the ambiguous case safe:
+
+> If a host timeout, a lost stdout, or a crash leaves you unsure whether your
+> `complete` landed, **run the exact same `complete` again** and read the
+> message. Do not skip it (that abandons the claim) and do not edit the mailbox
+> to look.
+
+| What the retry says | What actually happened | Do |
+|---|---|---|
+| `result_submitted` (exit `0`) | the first attempt did **not** land | done — return to the watcher |
+| `task already has a submitted result (already completed)` | the first attempt landed and OA has not collected it yet | done — return to the watcher |
+| `no claimed task to complete … superseded/requeued by OA recovery, or never claimed` | either the first landed and OA already collected it, or the lease expired and OA re-queued the task | **do not resubmit**; return to the watcher. A re-queued task arrives again as `task_received` with a new `claim_token` |
+| `claim superseded: claim_token does not match the active claim` | the lease expired and OA re-queued; the new attempt is canonical | **do not resubmit**; return to the watcher |
+
+The same reasoning covers the shortened slices on hosts whose blocking calls are
+capped (host-notify-probe.md §1b): more restarts mean more chances to be
+interrupted near a submission, and the retry is the answer in every case.
+
+Handling a `complete` whose error you actually saw (as opposed to the unknown
+case above). All of these exit `1`; the message is what distinguishes them:
 
 - **Claim superseded** (the lease expired and OA re-queued the task): do **not** retry the submission — the re-queued attempt is canonical. Return to the watcher.
 - **Draft rejected** (a schema/field error, an artifact outside the allowed write roots, an artifact-bounds failure): the error names the cause. Fix the draft once — correct the field or drop/relocate the offending artifact — and resubmit a single time.

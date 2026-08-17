@@ -1,6 +1,6 @@
 # PAO-LWAR v1.18 개선 설계
 
-**Status** P1·P2·P3·P4 done (ProbeScriptUpgrade 제외), P5/P6 pending · **Target** `.agents/skills/pao-lwar` v1.17 (runtime protocol 1.4.2)
+**Status** P1–P5 done (ProbeScriptUpgrade 제외), P6 pending · **Target** `.agents/skills/pao-lwar` v1.17 (runtime protocol 1.4.2)
 **Source** `_workspace/lwar-skill-review/integrated-review.md` (8개 런타임 통합 리뷰, D1–D37)
 **추가 근거** 2026-08-16 OA 세션 버스 실증 (R1, R2 — §2)
 **계약 검증** 2026-08-16 `task-pao-ack-20260816` — exit-notify 계약 end-to-end 1회 통과 (§10)
@@ -172,21 +172,21 @@ PaoLwarV118 // pao-lwar v1.17 → v1.18 @v:0.2 (in-progress)
             #       "실작업 의도 없는 세션은 register 금지" 규범
             # 근거: 오늘 리뷰 세션 등록 2건이 실제 슬롯 점유 (D10 실증)
             # 미결: §7 D2
-    P5_ResultContract // 결과·오류 계약 (designing) #D15 #D16 #D19 #D22 #D26 #D35
-        ExitCodeDictionary // exit code 사전 통합 (in-progress)
+    P5_ResultContract // 결과·오류 계약 (done) #D15 #D16 #D19 #D22 #D26 #D35
+        ExitCodeDictionary // exit code 사전 통합 (done) — lifecycle.md, 실측 대조
             # Task: status 0/2/3/4 + begin 0/4 + complete 0/1 + adp 10/20/30/40
             #       + registration_rejected 3 + status exit 1(파일 부재) 을 한 표로
             # criteria: 문서에 없는 exit code 가 CLI 표면에 0건
-        CompleteIdempotency // complete 멱등성·재시도 계약 (designing)
+        CompleteIdempotency // complete 멱등성·재시도 계약 (done) — execute-complete.md
             # Task: "exactly one terminal result" 를 논리 결과 1개로 정의,
             #       stdout 유실/timeout 시 status 조회 → 동일 execution_token 재시도 절차
             # criteria: 제출 후 timeout 시나리오에서 결정 절차가 유일하게 결정됨
-        PermissionGateStatus // 권한 거부 시 blocked 제출 (in-progress)
+        PermissionGateStatus // 권한 거부 시 blocked 제출 (done)
             # Target: references/execute-complete.md 상태 표 1행 추가
             # criteria: 무인 루프에서 lease 만료 방치 대신 terminal 제출로 수렴
         CancelLimitNote // exit-notify 의 cancel 한계 명시 (done)  # AdpLoopSplit 과 함께 조기 완료
             # "cancel 은 complete 후 watcher 재시작 시 처리. 중단 지연 상한 = 태스크 실행 시간"
-        NextActionSpec // next_action 허용값 명세 (designing)
+        NextActionSpec // next_action 허용값 명세 (done) — validate | none, OA 미소비
             # 현재 스키마는 non-empty string, 예시는 "validate" 하나뿐
             # OA 소비 방식 미정 — 값 집합 확정 필요
     P6_Hygiene // 위생 묶음 (in-progress) #D18 #D20~D37
@@ -368,7 +368,8 @@ P4_runtime -> AI_mirror(pao_lwar_runtime, pao_oa_runtime)
 | 2 | **P2** 호스트 계약 — 다음 벤더 등록 **전**에 필요 | **done** (2026-08-16, `ProbeScriptUpgrade` 제외) |
 | 3 | LWAR3 ack probe | **done** (2026-08-16) — `task-pao-ack-20260816` succeeded, semantic `accepted`, LWAR3가 `complete` 후 watcher 재기동해 `watching` 복귀 |
 | 4 | **P4** 런타임 — 막힌 슬롯이 무해하므로 급하지 않음 | **done** (2026-08-16) — §11 |
-| 5 | P5 / P6 | 대기 |
+| 5 | **P5** 결과·오류 계약 | **done** (2026-08-16) — §12 |
+| 6 | P6 위생 | 대기 |
 
 판단 근거: **지금의 실제 리스크는 "다음 벤더 세션이 잘못된 워처를 띄우는 것"이지 "슬롯 2개가 잠긴 것"이 아니다.** 문서 층을 먼저 닫고 런타임 변경은 검증 뒤에 한다.
 
@@ -492,3 +493,42 @@ P1·P2로 고친 exit-notify 계약이 실제 LWAR에서 작동하는지 확인�
 ### 관측 — 설계 제약 정정
 
 `registry.py` 하나로 "두 번들은 byte-identical"이라 단정했으나, `lwar_cli.py` / `adp_watch.py` / `pao_cli.py`는 **초기 커밋부터 이미 상이**하다(역할별 차이). parity 게이트는 **변경한 모듈에만** 적용한다. 기존 상이 3종은 이번 범위 밖이며 통일 대상이 아니다.
+
+---
+
+## 12. P5 실행 기록 (2026-08-16)
+
+문서만 변경. 런타임 무변경.
+
+### CompleteIdempotency — 코드가 이미 답을 갖고 있었다
+
+`command_complete`는 claim 파일을 **소비**하고, 두 번째 호출은 `result_exists`로
+`task already has a submitted result (already completed)`를, 아니면
+`no claimed task to complete … superseded/requeued` 를 낸다. 즉 **재시도가 중복 결과를 만들 수 없다.**
+codex P1이 지적한 "무재시도는 유실, 무조건 재시도는 중복"의 딜레마는 실재하지 않았고,
+비결정적이었던 것은 문서뿐이었다.
+
+문서화한 규칙: 제출 여부가 불확실하면 **같은 `complete`를 그대로 다시 실행하고 메시지로 분기**한다.
+메일박스를 들여다보지 않고, 건너뛰지도 않는다. 4가지 메시지 → 행동 표를 추가했다.
+
+이 규칙은 P2의 축소 슬라이스와 직접 결합한다 — 슬라이스가 짧아지면 재시작이 잦아지고
+제출 근처에서 끊길 확률이 오른다.
+
+### ExitCodeDictionary — 실측 대조
+
+`lifecycle.md`에 LWAR 측 전 명령의 exit code를 한 표로 모았다. 코드에서 도출한 뒤 4건을 실제 실행으로 확인:
+
+| 검사 | 실측 | 문서 |
+|---|---|---|
+| `oa-status` (OA live) | 0 | 0 |
+| `status` (identity 파일 없음) | 1 | 1 |
+| `status` (미등록 슬롯) | 3 | 3 |
+| `complete` (claim 없음) | 1 + 정확한 메시지 | 1 |
+
+`status` exit `1`(identity 파일 소실, qwen U4)은 §0.5 분기에 없던 상태였다 — REGISTER fresh로 규정했다.
+
+### 나머지
+
+- `PermissionGateStatus` — 호스트 권한 게이트 거부는 `blocked` + evidence에 거부된 명령. 무인 루프에서 lease 만료 방치보다 낫다
+- `NextActionSpec` — 런타임 실제 값은 `validate` | `none`, **OA는 분기하지 않는다**(advisory). 코드 확인 후 그대로 명세화
+- `CancelLimitNote` — P1에서 조기 완료
