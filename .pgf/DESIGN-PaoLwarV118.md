@@ -1,6 +1,6 @@
 # PAO-LWAR v1.18 개선 설계
 
-**Status** P1–P6 done — `ProbeScriptUpgrade` 만 designing · **Target** `.agents/skills/pao-lwar` v1.17 (runtime protocol 1.4.2)
+**Status** P1–P6 done (전 노드) · **Target** `.agents/skills/pao-lwar` v1.17 (runtime protocol 1.4.2)
 **Source** `_workspace/lwar-skill-review/integrated-review.md` (8개 런타임 통합 리뷰, D1–D37)
 **추가 근거** 2026-08-16 OA 세션 버스 실증 (R1, R2 — §2)
 **계약 검증** 2026-08-16 `task-pao-ack-20260816` — exit-notify 계약 end-to-end 1회 통과 (§10)
@@ -116,7 +116,6 @@ PaoLwarV118 // pao-lwar v1.17 → v1.18 @v:1.0 (done)
             # Target: SKILL.md:159 (Rule 9 "Do not kill the background process"), Rule 3
             # criteria: exit-notify 수행자가 죽은 프로세스에 Rule 9 를 적용하지 않음
     P2_HostContract // 호스트 능력 계약 — 실측 8종 기반 (done) #D5 #D6 #D7 #D12 #D14
-        # ProbeScriptUpgrade 만 designing 으로 남김 — 1c 의 fail-closed 가 급성 위험을 제거
         HostMatrix // 실측 매트릭스를 host-adapter.md 정본으로 편입 (done) #D11
             # Source: integrated-review.md §2 (8 런타임 실측)
             # Task: 벤더별 문서 5개 신설 대신 표 1개 + 3~5행 스텁
@@ -131,7 +130,7 @@ PaoLwarV118 // pao-lwar v1.17 → v1.18 @v:1.0 (done)
         HostExitCaveat // tool wrapper exit != process exit (done)
             # 분기 키는 stdout JSON 의 event/status. host-reported exit 는 보조
             # criteria: grok 실측(RC 2 를 host 가 1 로 보고) 사례가 문서로 설명됨
-        ProbeScriptUpgrade // host_notify_probe.py 에 타임스탬프 출력 (designing)
+        ProbeScriptUpgrade // host_notify_probe.py 에 타임스탬프 출력 (done) — §18
             # Target: scripts/host_notify_probe.py (양 번들)
             # 판정 근거를 세션 기억이 아닌 출력으로 남긴다. deepseek F4
     P3_Portability // standalone 계약 회복 (done) #D4 #D8 #D13 #D17
@@ -370,6 +369,7 @@ P4_runtime -> AI_mirror(pao_lwar_runtime, pao_oa_runtime)
 | 4 | **P4** 런타임 — 막힌 슬롯이 무해하므로 급하지 않음 | **done** (2026-08-16) — §11 |
 | 5 | **P5** 결과·오류 계약 | **done** (2026-08-16) — §12 |
 | 6 | **P6** 위생 + `v1.18` 확정 | **done** (2026-08-16) — §13 |
+| 7 | `ProbeScriptUpgrade` (P2 잔여) | **done** (2026-08-18) — §18 |
 
 판단 근거: **지금의 실제 리스크는 "다음 벤더 세션이 잘못된 워처를 띄우는 것"이지 "슬롯 2개가 잠긴 것"이 아니다.** 문서 층을 먼저 닫고 런타임 변경은 검증 뒤에 한다.
 
@@ -820,3 +820,48 @@ lifecycle response 2건이 `on → draining`, `draining → on`으로 각각 `ac
 | adherence probe 변별력 | ✅ 3통과 / 1실패 후 교정 |
 
 **미검증으로 남은 계약 없음.** `ProbeScriptUpgrade`(설계상 유일한 `designing` 노드)만 의도적으로 보류 중이다.
+
+---
+
+## 18. ProbeScriptUpgrade — 설계 마감 (2026-08-18)
+
+P2에서 유일하게 `designing`으로 남겼던 노드. 보류 근거("§1c fail-closed가 판정 불가를 흡수하므로 급성 위험 없음")는
+여전히 유효하지만, 호스트가 3종으로 늘고 각기 다른 슬라이스(540 / 3000 / 3000)를 쓰게 되면서
+**판정 근거가 세션 메모리에만 있다는 비용**이 실제로 드러났다.
+
+### 한 것
+
+`host_notify_probe.py`의 두 마커에 **emit 시각과 elapsed**를 실었다.
+
+```text
+PAO_LIVE emitted_at=2026-08-18T04:59:31.651340Z elapsed_s=0.000
+PAO_EXIT emitted_at=2026-08-18T04:59:36.652502Z elapsed_s=5.001
+```
+
+이것이 닫는 공백: 기존에는 *"두 줄이 한꺼번에 도착했다"*가 **(a) 호스트가 종료 시 배달을 묶었다**(= exit-notify, 프로브 정상)와
+**(b) 프로브가 오작동해 두 줄을 동시에 뱉었다**를 구분하지 못했다. 이제 emit 간격 ~5초가 (a)를 증명한다.
+토큰(`PAO_LIVE`/`PAO_EXIT`)은 **줄 머리 그대로** 두어 기존 지시·grep 호환을 유지했다.
+
+`--record PATH`로 emit 마커를 JSON으로 남길 수 있다(선택). 기록되는 것은 **프로세스가 한 일뿐**이며,
+`notify_style` 판정은 *배달* 방식에 대한 세션의 판단이므로 파일이 대신할 수 없다 — 파일 자체에 그 문구를 넣었다.
+
+### 하지 않은 것과 이유
+
+deepseek A5의 원안은 프로브 값을 `var/host-probe-{session}.json`에 영속화하자는 것이었고,
+나는 여기에 "OA가 각 슬롯의 슬라이스를 알 수 있게" 하는 목적을 얹으려 했다. **채택하지 않았다.**
+
+1. **키가 없다.** 프로브는 등록 *이전*에 돌므로 `instance_id`가 아직 없다. 채택 후 기록하려면 새 CLI verb가 필요하다.
+2. **기존 스키마는 다른 용도다.** `host-capability.schema.json`은 `host_adapter.py`의 deny_all/토큰 검증용이고
+   `adapter_id` enum이 `{qwen_code, kimi_cli}`로 고정돼 있다. 재사용하려면 스키마 변경 = protocol 경계를 건드린다.
+3. **필요가 진단 편의에 가깝다.** OA는 라우팅 건전성을 보지 슬라이스 길이를 볼 필요가 없다.
+   내가 `Get-CimInstance`로 명령줄을 조회한 것은 이번 검증용 일회성 필요였다.
+
+D2에서 `--purpose` 필수 필드를 문서 규범으로 낮춘 것과 같은 판단이다 — **진단 편의를 위해 계약 표면을 늘리지 않는다.**
+OA가 볼 수 있는 호스트 능력이 정말 필요해지면 그때 제대로 된 계약으로 제안하는 것이 맞다.
+
+### 게이트
+
+`pytest` 66 passed, `doctor` 양쪽 healthy(1.4.2), `wrapper_scripts` 체크 통과, 두 번들 사본 md5 동일.
+스키마·프로토콜 무변경.
+
+**설계 트리 전 노드 종료.**

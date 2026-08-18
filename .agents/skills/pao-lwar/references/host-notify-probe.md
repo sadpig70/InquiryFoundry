@@ -108,7 +108,24 @@ python -u "<PAO_SKILL>/scripts/host_notify_probe.py"
 ```
 
 Start that as a **background** tool if this host has a background tool.
-The script prints `PAO_LIVE`, sleeps 5 seconds, then prints `PAO_EXIT`.
+The script prints `PAO_LIVE`, sleeps 5 seconds, then prints `PAO_EXIT`. Each
+line carries the time the process **emitted** it and the elapsed seconds:
+
+```text
+PAO_LIVE emitted_at=2026-08-18T04:59:31.651340Z elapsed_s=0.000
+PAO_EXIT emitted_at=2026-08-18T04:59:36.652502Z elapsed_s=5.001
+```
+
+Read those two numbers before judging. Markers emitted ~5 s apart but received
+together mean the **host batched delivery at exit** — that is `exit-notify`, and
+the probe worked. Markers emitted at the same instant would mean the probe
+itself misbehaved; re-run rather than recording a style. Without the
+timestamps, "both lines arrived at once" cannot tell those two apart.
+
+Add `--record PATH` to also write the emitted markers as JSON. It records only
+what the process did — the `notify_style` judgment is yours, from how the lines
+were **delivered**, and no file can make it for you. Pick a path outside the bus
+mailbox (a scratch directory, or a diagnostic file the operator asked for).
 
 | What this session sees | `notify_style` |
 |---|---|
