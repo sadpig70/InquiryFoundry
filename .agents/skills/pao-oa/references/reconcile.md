@@ -45,6 +45,17 @@ python "<PAO_SKILL>/scripts/oa.py" status --startup-deadline 30
   watcher heartbeat, and `stale` only for a watcher that had started and later
   exceeded `--stale-after` (default 120s). `heartbeat_identity_match` fences an
   old generation from the current slot.
+- `runtime_status=inactive` is the fifth value: a **fresh** heartbeat whose
+  status is not one of the routable `watching` / `idle` / `running` — in
+  practice `control`, seen for a few seconds while the LWAR handles a control.
+  It is transient and healthy; the slot returns to `active` on the next
+  heartbeat. Do not treat it as a failure or route around it permanently.
+- Two `stale` cautions before concluding a runtime died. An **exit-notify**
+  watcher exits when it delivers a task, so nothing writes a heartbeat while the
+  agent executes: a healthy LWAR sits at `running` with a frozen `last_seen` for
+  the whole task, and anything longer than `--stale-after` reads as `stale`.
+  Check `status` and `current_task_id`, and remember the lease — not the
+  heartbeat — is what bounds a lost claim.
 - Missing, corrupt, identity-mismatched, `starting`, or stale heartbeats are
   excluded from `send --auto`; use explicit `--lwar-id` only when the operator
   intentionally overrides routing health.

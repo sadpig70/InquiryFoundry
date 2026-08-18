@@ -702,7 +702,53 @@ LWAR가 스스로 `state on`을 요청하지 않는다.
 → **OA가 건 drain은 OA가 되돌릴 수 없다.** 검증된 라이브 LWAR 2대뿐인 상태에서
 복구 수단 없는 일방향 조작을 실행하는 것은 부당하다고 판단해 보류하고, 이 비대칭 자체를 결함으로 기록한다.
 
-**새 항목 D38 — `drain`의 일방향성**: OA에게 `resume`/`undrain` control이 없다.
-선택지는 (A) `control --command resume` 추가(LWAR가 `state on` 요청을 발행하도록), (B) OA-initiated drain 이후 LWAR가
-`state on`을 요청해도 되는 조건을 `lifecycle.md`에 명시, (C) 현행 유지하되 "drain은 사실상 shutdown 예약"임을 문서화.
-미결 — 정욱님 판단 필요.
+**새 항목 D38 — `drain`의 일방향성**: OA에게 `resume`/`undrain` control이 없다. → §16에서 (B)로 해소.
+
+---
+
+## 16. D38 해소 — `drain` 복귀 경로 (2026-08-18, 결정 (B))
+
+(A) `control --command resume` 신설은 control enum이 `control.schema.json`에 박혀 있어 **스키마 변경 → protocol bump**를 부른다.
+D3에서 1.4.2를 유지하기로 한 근거(한쪽 번들만 올리면 전 등록이 `runtime_version_mismatch`로 거부)가 그대로 유효하므로 채택하지 않았다.
+(C) 기능 포기도 과하다. **(B) 문서 규약**으로 해소하되, "조건을 적는다"에 그치지 않고 **구체적 메커니즘**을 지정했다.
+
+### 메커니즘 — `pao-resume` ping
+
+`reason`은 이미 `control.schema.json`의 필드(`string|null`)이고 모든 control이 싣는다. 스키마 무변경.
+
+```bash
+oa.py control --lwar-id LWARn --command ping --reason "pao-resume: <사유>"
+```
+
+> LWAR: `control:ping`의 `reason`이 `pao-resume`으로 시작하고, 자기 슬롯이 `draining`이며 claim이 없으면
+> `state on`을 요청하고 레지스트리가 `on`을 확인할 때까지 폴링한 뒤 watch를 계속한다. 그 외에는 평소대로 처리한다.
+
+코드 근거: `adp_watch.py`의 `claim_control`(L338)이 `slot["state"] == "on"` 검사(L427)보다 **앞**에 있다.
+즉 `draining` 슬롯도 control을 정상 수령한다.
+
+### 검증한 것 / 못 한 것
+
+**전달 계층은 실증했다.** LWAR1(state `on`)에 `pao-resume` reason을 실은 ping을 보냈다:
+
+| 관측 | 결과 |
+|---|---|
+| control 메시지의 `reason` | 원문 그대로 보존 |
+| 수령 | claim → ack → `archive/control/` |
+| 상태 영향 | **없음** — 규약의 "그 외에는 평소대로" 분기대로 `on` 유지 |
+| 복귀 | `inactive`(handling) → `active`, 약 13초 |
+
+**resume 동작 자체는 미검증이다.** 검증하려면 라이브 LWAR을 drain해야 하는데,
+현재 LWAR1·LWAR3는 **이 규약이 존재하기 전에** 번들을 읽은 세션이다 — 컨텍스트에 규약이 없으므로 resume ping을 이해하지 못한다.
+즉 지금 drain하면 여전히 복구 불가다. **규약의 전제는 "LWAR가 이 규약이 담긴 번들을 읽었을 것"**이며, 다음 신규 등록부터 성립한다.
+
+### 규약의 한계 (문서에 명시)
+
+1. **협조적 규약**이다. LWAR가 이 번들을 읽었고 watcher가 살아 있어야 한다.
+2. **live-notify 워처에는 도달하지 않는다** — 그쪽에서 `ping`은 stdout 없이 ack되므로 에이전트가 reason을 볼 수 없다.
+3. 그래서 OA 문서에는 *"`drain`을 pause로 쓰지 말 것. 그 런타임을 멈출 의도가 아니면 걸지 말 것"*을 함께 적었다.
+
+### 파생 수정 — 문서화되지 않은 `runtime_status`
+
+이번 ping 중 `runtime_status=inactive`가 관측됐다. `routing.py:73` 기준
+**신선한 heartbeat인데 status가 routable 집합(`watching`/`idle`/`running`)이 아닌 경우**이며, control 처리 중의 `control` 상태가 이에 해당한다.
+`reconcile.md`는 네 값만 설명하고 있었다 — `inactive`(일시적·정상)와, 실행 중 exit-notify LWAR이 `stale`로 보이는 이유를 함께 추가했다.

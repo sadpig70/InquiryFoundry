@@ -189,7 +189,7 @@ wrapper that reports `returncode`) rather than trusting the tool result.
 | `idle_timeout` (`reason=max_runtime`) | `10` | n/a | Official exit-notify idle of `adp` / `--resident --max-runtime-s`. Restart the same watcher |
 | `idle_timeout`, `state_wait` | `10` | n/a | Compatibility single-slice only (neither `--background` nor `--resident`+`--max-runtime-s`) |
 | `registration_pending` (`reason=max_runtime`) | `2` | n/a | Approval has not arrived yet. Restart the same `response` command |
-| `control:ping` | `20` then exit | (running, no stdout) | exit-notify: the ack is already written; restart. live-notify: acked with no stdout — if you somehow see this, ignore |
+| `control:ping` | `20` then exit | (running, no stdout) | exit-notify: check `message.reason` — a reason starting with `pao-resume` while your slot is `draining` is the resume convention (lifecycle.md); otherwise the ack is already written, just restart. live-notify: acked with no stdout — if you somehow see this, ignore |
 | `control:drain` | `20` then exit | (running) | Finish current work, request lifecycle `draining`. exit-notify: restart and keep serving until `shutdown`. live-notify: leave the watcher running until `shutdown` |
 | `control:cancel` | `20` then exit | (running) | Stop the held task and submit `cancelled`, then restart (exit-notify only). Unclaimed cancels are tombstoned by the watcher |
 | `control:retire` | `20` then exit | `20` then exit | Submit any held terminal result, then `lwar.py retire` until `lwar_retired`. The watcher process exits. Do not restart |

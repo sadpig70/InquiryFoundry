@@ -98,7 +98,10 @@ sha256 자가보고 3건이 OA 재계산과 일치. **축소 `slice_s` 실증** 
 **cancel 경로 실증 완료** (§6 참조): 실행 중 cancel은 **태스크를 멈추지 못한다**(정상 완료됨).
 미claim 태스크 cancel은 tombstone으로 완벽 동작(발행→취소 6초).
 
-검증되지 **않은** 것: `drain` 경로 — 의도적 보류. **OA에게 resume/undrain control이 없어 되돌릴 수 없다**(D38).
+`drain` 경로: **D38을 (B) 문서 규약으로 해소** — `oa.py control --command ping --reason "pao-resume: …"`.
+`draining` LWAR이 이를 받으면 `state on`을 요청한다(`lifecycle.md`). 전달 계층은 실증했으나 **resume 동작 자체는 미검증**:
+현 LWAR1·LWAR3는 이 규약 이전에 번들을 읽었으므로 이해하지 못한다. **다음 신규 등록부터 유효.**
+그 전까지 `drain`은 여전히 되돌릴 수 없으니 **멈출 의도가 아니면 걸지 말 것.**
 
 ---
 

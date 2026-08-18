@@ -143,6 +143,25 @@ python "<PAO_SKILL>/scripts/oa.py" control --lwar-id LWAR1 --command shutdown
   healthy runtime. Read `status` + `current_task_id` before concluding a runtime
   died; the lease, not the heartbeat, is what bounds a lost claim.
 - `shutdown` requests a resumable ADP stop and deliberately retains the slot.
+- **`drain` has no dedicated reverse.** The control set is
+  `{shutdown, retire, ping, cancel, drain}`, and every lifecycle transition is
+  authored by the LWAR — OA only approves them in `reconcile`. An LWAR that was
+  drained by OA is told to keep watching until `shutdown`, so it will not
+  return to `on` on its own. Treat `drain` as **the first step of stopping that
+  runtime**, not as a pause, and do not drain a healthy LWAR you still want.
+
+  The documented way back is a `ping` whose reason starts with `pao-resume`:
+
+  ```bash
+  python "<PAO_SKILL>/scripts/oa.py" control --lwar-id LWAR1 --command ping --reason "pao-resume: drain no longer needed"
+  ```
+
+  A `draining` LWAR that sees it requests `state on`; approve that with
+  `reconcile` and confirm with `status`. Two limits: it is a **cooperative**
+  convention (the LWAR must be running a bundle that documents it, and must
+  still have a live watcher), and it cannot reach a **live-notify** watcher at
+  all, because `ping` is acknowledged there without a stdout line. If either
+  applies, resuming needs the operator.
 - `retire` requests a clean one-time shutdown: LWAR submits any terminal result,
   then repeatedly drives `on → draining → off → deregistered` with `lwar.py
   retire`. OA must keep presence live and run `reconcile` until the LWAR reports

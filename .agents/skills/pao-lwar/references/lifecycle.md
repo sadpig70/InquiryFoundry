@@ -114,6 +114,24 @@ python "<PAO_SKILL>/scripts/lwar.py" state deregistered --identity-file IDENTITY
   Anything not in this table is rejected as an illegal transition.
 - Lifecycle commands are **requests**: the registry state changes only after OA runs `reconcile` and approves. Do not assume a state is final until a status inspection confirms it.
 - `draining`: finish current work, accept no new tasks. Who ends it depends on who started it: after an **OA-initiated** `control:drain`, keep watching until `shutdown` (OA owns the stop); request `off` yourself only in the **self-initiated** context-exhaustion handoff below.
+- **Resuming from an OA-initiated `draining`.** OA has no `resume` control — its
+  set is `{shutdown, retire, ping, cancel, drain}` — and lifecycle transitions
+  are always LWAR-authored, so without a convention an OA drain is one-way. The
+  convention is a `ping` carrying a reason that starts with **`pao-resume`**:
+
+  > On `control:ping` whose `reason` starts with `pao-resume`, if your slot state
+  > is `draining` and you hold no claim, request `state on`, poll until the
+  > registry confirms `on`, then continue watching. Otherwise handle the ping
+  > normally (acknowledge and continue).
+
+  Controls are claimed before the watcher checks lifecycle state, so a
+  `draining` LWAR still receives them. Do not self-request `on` for any other
+  reason after an OA drain — a drain you resume on your own guess defeats the
+  point of OA owning the stop.
+
+  This convention does not reach a **live-notify** watcher: `ping` is
+  acknowledged there without a stdout line, so the agent never sees the reason.
+  A live-notify LWAR can only be resumed by its operator.
 - Deregistration frees the numeric slot; a future reuse of the slot bumps `generation`, and your old identity becomes permanently stale.
 
 ## Clean retirement
