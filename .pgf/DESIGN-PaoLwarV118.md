@@ -462,7 +462,7 @@ LWAR3가 `2026-08-16T22:13:37Z` ~ `2026-08-17T23:24:46Z` 동안 **`invocation_st
 그 구간에 `adp_error` 는 **0건**이다. 즉 exit-notify 의 `idle_timeout`(exit 10) → 같은 스크립트 재시작 루프가
 **25시간 연속 무인 동작**했다. §10 목록에서 '50분 슬라이스 경계'를 제거한다.
 
-여전히 미검증: 이종 벤더 동시 다중 LWAR, cancel/drain 경로, **축소 `slice_s`**(600s 상한 호스트 필요).
+여전히 미검증(당시): 이종 벤더 동시 다중 LWAR, cancel/drain 경로, **축소 `slice_s`**(600s 상한 호스트 필요). → §14에서 앞의 둘 해소.
 
 ---
 
@@ -577,3 +577,65 @@ P2·P6 통틀어 유일하게 남긴 노드. `host_notify_probe.py`에 타임스
 ### 설계 상태
 
 `PaoLwarV118` 루트 `(done)`. D1–D37 중 이번 범위에서 다루기로 한 항목과 R1·R2 전부 종료.
+
+---
+
+## 14. 축소 `slice_s` · 이종 벤더 다중 LWAR 실증 (2026-08-18)
+
+Qwen Code 런타임이 v1.18 번들로 `/pao-lwar`를 수행해 **LWAR1 generation 3**(`qwen_code` / `alibaba`)으로 승인됐다.
+제가 회수했던 LWAR1 슬롯이 tombstone 소비 후 generation 3으로 재배정된 것으로, R1 회수 → 재사용 경로가 왕복으로 닫혔다.
+
+### 등록 자체가 v1.18 준수의 증거
+
+| 필드 | 값 | 의미 |
+|---|---|---|
+| `runtime_version` | `1.4.2` | 두 번들 동일 — 버전 lockstep 정상 |
+| `adapter_id` | `qwen_code` | **P6 HostMatrix 슬러그 카탈로그와 일치** |
+| `model` | `Unreported Model` | 추측 대신 정직한 센티널 (register.md 지침) |
+| `behavior_contract` | `lwar-runtime.v2-adp` | P6에서 설명을 추가한 필드 |
+
+### BlockingCapRule (D5 / P2 §1b) — 최초 실증
+
+watcher 프로세스 명령줄을 직접 조회한 결과:
+
+```text
+LWAR1 (Qwen Code, 600s 상한) : adp_exit_notify.py … --max-runtime-s 540
+LWAR3 (Grok Build, 상한 없음) : adp_exit_notify.py …            (플래그 없음 → 기본 3000)
+```
+
+Qwen이 문서만 읽고 자기 호스트의 blocking 상한을 측정해 `slice_s = max(60, 600−60) = 540`을 **독립적으로 도출·적용**했다.
+
+슬라이스 종료 방식(규칙의 존재 이유)도 측정했다:
+
+| LWAR1 `invocation_started` | 간격 | 원인 |
+|---|---:|---|
+| `2026-08-17T23:56:52Z` | — | 채택 직후 첫 watcher |
+| `2026-08-18T00:00:59Z` | 246초 | **태스크 배달**로 종료 (캡 아님) |
+| `2026-08-18T00:10:11Z` | **551초** | **540초 idle 캡 + 재시작 오버헤드 ≈11초** |
+
+`adp_error` 0건, `invocation_superseded` 0건. 즉 축소 슬라이스는 **호스트 강제 kill이 아니라 정상 `idle_timeout`(exit 10) → 재시작**으로 끝난다. D5의 처방이 실제 600s 상한 호스트에서 성립한다.
+
+### 이종 벤더 다중 LWAR
+
+`LWAR1`(alibaba) + `LWAR3`(xai)가 동시에 `active`. 이 버스에서 처음이다.
+서로 다른 슬라이스 길이(540 / 3000)가 같은 계약 아래 공존한다.
+
+### ack2 probe — `task-pao-ack2-20260818`
+
+Grok 때보다 한 단계 강화했다. `ack.txt`(고정 문자열) + `echo.txt`(`task_id` 역참조)에 더해
+**`count.txt` = 자기 `completion_criteria` 배열의 원소 개수**를 요구 — 계약을 읽고 세어야만 통과한다.
+
+| 검사 | 결과 |
+|---|---|
+| 세 파일 바이트 | 11 / 23 / 2 바이트, 전부 byte-exact, CR·BOM 없음 |
+| cwd 여분 파일 | 0 |
+| LWAR 보고 sha256 vs OA 재계산 | 3/3 일치 |
+| `collect` | count 1, quarantined 0 |
+| `validate --record` | `accepted`, ledger `completed` |
+| 복귀 | `complete` 후 watcher 재기동 → `watching` |
+
+evidence에 파일별 sha256과 **두 번의 독립 read-back 패스**를 요구하지 않았는데도 기록했다.
+
+### 남은 미검증
+
+`cancel` / `drain` 경로. exit-notify에서 cancel은 실행 중 도달하지 않고 다음 슬라이스에서 처리되는데(P1 CancelLimitNote), 그 지연 상한이 실측된 적은 없다.

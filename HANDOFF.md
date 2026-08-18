@@ -41,10 +41,14 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 
 - Bus: `D:\InquiryFoundry\.pao`
 - `registry_version`: **16**
-- 슬롯: **LWAR3 only**, generation **2**, `on`, `runtime_status=active` (watcher 정상 동작 중)
-  - `instance_id`: `lwar-instance-dbaa67bc3bbe44c8a0a852188c4e8d8b`
-  - profile: Grok Build TUI / `adapter_id=grok_build` / `vendor_family=xai`
-  - **실제 태스크를 완수하고 accepted 받은 검증된 LWAR다** (§5). 함부로 은퇴시키지 말 것.
+- 슬롯 **2개, 둘 다 `on` / `active`**. 이종 벤더 동시 운용 중 — **함부로 은퇴시키지 말 것.**
+
+| 슬롯 | gen | profile | 슬라이스 | 비고 |
+|---|---:|---|---:|---|
+| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` | **540s** | `instance_id` `lwar-instance-b9518c1313ea43ddad013ae3efd3b96c`. 600s 상한 호스트 → 축소 슬라이스 실증 (§5) |
+| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` | 3000s | `instance_id` `lwar-instance-dbaa67bc3bbe44c8a0a852188c4e8d8b`. 31슬라이스 25시간 무중단 |
+
+  **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO LWAR 등록은 정욱님의 명시적 지시로 승인했으나, **IF 태스크는 이 슬롯에 라우팅하지 않는다** (배제 유효 여부 미확인).
 - 이번 세션에서 회수한 슬롯 (tombstone에 generation 보존):
   - **LWAR1** — Grok 스모크 슬롯. 미수령 `shutdown` control 만료 후 `retire-stale`. mode `stale_idle_reap`
   - **LWAR2** — DeepSeek 리뷰 세션이 남긴 미채택 등록. `reclaim-unadopted`. mode `unadopted_reap`
@@ -87,7 +91,11 @@ P1~P2 개정이 실제로 작동하는지 확인한 **첫 end-to-end 실행**. `
 - OA가 `exit_code=0`만으로 승인하지 않고 파일을 바이트로 재검증한 뒤 `accepted`
 - 상세: `.pgf/DESIGN-PaoLwarV118.md` §10
 
-검증되지 **않은** 것: 이종 벤더 동시 3-LWAR, 50분 슬라이스 경계, cancel/drain 경로, 축소 `slice_s` 실동작.
+추가 검증 (`task-pao-ack2-20260818`, Qwen LWAR1): `count.txt`로 계약 역참조까지 요구한 강화 probe 통과.
+sha256 자가보고 3건이 OA 재계산과 일치. **축소 `slice_s` 실증** — watcher 명령줄에 `--max-runtime-s 540`,
+슬라이스 간격 551초(540 + 재시작 ≈11초), `adp_error` 0건. **50분 슬라이스**도 LWAR3가 31슬라이스 25시간 무중단으로 검증.
+
+검증되지 **않은** 것: `cancel` / `drain` 경로.
 
 ---
 
