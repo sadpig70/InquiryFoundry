@@ -51,7 +51,7 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 
   instance_id — LWAR1 `…b9518c13…` / LWAR2 `…50630f48…` / LWAR3 `…dbaa67bc…` (회수 명령에 정확한 튜플 필요)
 
-  **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO LWAR 등록은 정욱님의 명시적 지시로 승인했으나, **IF 태스크는 이 슬롯에 라우팅하지 않는다** (배제 유효 여부 미확인).
+  **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO 등록·일반 태스크는 정상 (실제로 `--auto`가 LWAR1에 배정한 태스크가 통과했다). **IF 런에만 배제가 걸리며, 그 배제는 코드가 아니라 운영자 규율이다 — §7 경고를 반드시 읽을 것.**
 - 이번 세션에서 회수한 슬롯 (tombstone에 generation 보존):
   - **LWAR1** — Grok 스모크 슬롯. 미수령 `shutdown` control 만료 후 `retire-stale`. mode `stale_idle_reap`
   - **LWAR2** — DeepSeek 리뷰 세션이 남긴 미채택 등록. `reclaim-unadopted`. mode `unadopted_reap`
@@ -136,8 +136,36 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 
-데이터: `.if/runs/…` (git 제외). Qwen/`vendor_family=alibaba` 제외.
+데이터: `.if/runs/…` (git 제외).
 기계 게이트: G-GROUND, G-CLEAR, G-PATH, G-TESTSHAPE. D18–D21 유효.
+
+### ⚠ Qwen/`alibaba` 배제는 **강제되지 않는다** (2026-08-18 확인)
+
+`if-core/if_core/const.py`에 다음이 선언돼 있다:
+
+```python
+EXCLUDE_FAMILIES = {"alibaba"}
+EXCLUDE_ADAPTERS = {"qwen"}
+```
+
+**그러나 이 두 상수는 정의부 외에 어디에서도 참조되지 않는다.** AST 검사로 확인했고 와일드카드 import도 없다.
+`inquiry_cycle(brief, lwars, …)` → `build_allocation(brief, lwars, …)` 는 넘어온 로스터를 **전부** 배정한다.
+즉 **유일한 방어선은 `if_cycle.py --lwars`에 무엇을 적느냐, 곧 운영자 규율이다.**
+
+`const.py`만 읽으면 "코드가 막아준다"고 오판하기 쉽다. 실제로는 막지 않는다.
+
+강제하려면 결정이 필요하다 — 단순 수정이 아니다:
+
+1. `tests/if/test_if.py`의 **e2e 테스트 5건**이 `LWAR3: alibaba` 로스터를 쓴다. 배제를 강제하면
+   3-LWAR → 2-LWAR가 되어 `normal 모드는 >= 3 필요` 로 **5건 전부 `Blocked`** 가 된다.
+   픽스처의 벤더 조합을 바꿀지, 배제가 애초에 코드 경로용이 아닌지 결정해야 한다.
+2. `if_cycle.py`의 CLI 도움말이 `--lwars LWAR1:anthropic,LWAR2:openai,LWAR3:alibaba` 를
+   **예시로** 쓴다 — 같은 패키지 안에서 정책과 모순된다.
+3. 배제 사유(평가 blind성 / 과거 품질 / 기타)에 따라 강제 계층이 달라진다.
+   PAO 라우팅이 아니라 IF 배정 경계가 맞다 — PAO `--auto`는 IF를 몰라야 정상이다.
+
+권위는 `.pgf/DESIGN-InquiryFoundry.md` v0.2.3이며, IF 세만틱 변경은 그 설계의 결정이다.
+**이번 세션에서는 발견만 기록하고 코드를 바꾸지 않았다.**
 
 ---
 
