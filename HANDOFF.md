@@ -45,9 +45,9 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 
 | 슬롯 | gen | profile | slice | 상태 |
 |---|---:|---|---:|---|
-| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` / agent | **540s** | **stale** — 세션 종료(마지막 슬라이스 정상 완주 후 미재기동). 미완 작업 0, 손실 없음. Qwen 세션 재개 예정이면 그대로 둘 것 |
-| LWAR2 | 3 | Kimi Code CLI / `kimi_cli` / `moonshot` / **cli** | 3000s | active. adherence probe 1회 실패 후 재시도 통과 (§5) |
-| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` / agent | 3000s | active. 40+슬라이스 무중단 |
+| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` / agent | **540s** | active. 세션 종료 후 **재등록 없이 RESUME**(gen 3 유지, registry 무변이). evidence가 가장 두꺼운 슬롯 |
+| LWAR2 | 3 | Kimi Code CLI / `kimi_cli` / `moonshot` / **cli** | 3000s | active. adherence probe 1회 실패 후 **3연속 통과** (§5) |
+| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` / agent | 3000s | active. 40+슬라이스 무중단. cwd에 헬퍼 파일을 남기는 성향 |
 
   instance_id — LWAR1 `…b9518c13…` / LWAR2 `…50630f48…` / LWAR3 `…dbaa67bc…` (회수 명령에 정확한 튜플 필요)
 
