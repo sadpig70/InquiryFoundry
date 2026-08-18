@@ -1,6 +1,6 @@
 # HANDOFF — InquiryFoundry
 
-세션 종료 시점: 2026-08-16 (OA = Claude Opus 5, 워크스페이스 `D:\InquiryFoundry`).
+세션 종료 시점: 2026-08-18 (OA = Claude Opus 5, 워크스페이스 `D:\InquiryFoundry`). 직전에 **하드 크래시** 1회 — §7.5.
 다음 세션은 이 파일을 먼저 읽고, 기본 역할은 **OA**다. 벤더 LWAR을 OA가 띄우지 않는다.
 
 호칭: 정욱님. 한국어 응답, 코드/경로/식별자는 English. 로컬 스킬만 (`.agents/skills`).
@@ -10,12 +10,19 @@
 ## 1. Git
 
 - Remote: https://github.com/sadpig70/InquiryFoundry (public)
-- Branch: `main` tracking `origin/main`. **HEAD = `2cad9a9`, push 완료** (워킹 트리 clean)
-  - `90720c6` pao-lwar: unify the official ADP path on exit-notify (v1.17 doc debt)
-  - `722b480` pao: add fenced recovery for slots OA could not reclaim
-  - `062fae4` pgf: add the v1.18 design driving the pao-lwar changes
-  - `2cad9a9` handoff: record the v1.18 session state
-- 작업 브랜치 `pao-lwar-v1.18`은 fast-forward merge 후 삭제됨. 되돌릴 단위는 위 4개 커밋.
+- Branch: `main` tracking `origin/main`. **HEAD = `4f6eb52`, push 완료** (워킹 트리 clean, 크래시 전 커밋 전부 반영됨)
+
+  - `4f6eb52` if-core: enforce the vendor exclusion that was only declared
+  - `2ce46b2` handoff: the alibaba exclusion is declared but never enforced
+  - `2f8c900` design: three vendors, one contract, and what auto-routing did with them
+  - `ced74f8` probe: timestamp the notify markers so the evidence outlives the session
+  - `ff82a68` design: close the last unverified contract, and what a failed probe taught
+  - `14acd5c` pao: give drain a documented way back, without touching the schema
+  - `22b9f1d` pao: cancel cannot stop an in-flight task, and one fence was wrong because of it
+  - `88edffb` design: record the first evidence for the shortened ADP slice
+  - `e7507c2` pao-lwar: make the register-or-not trigger unambiguous
+
+- 작업 브랜치 `pao-lwar-v1.18`은 fast-forward merge 후 삭제됨. 되돌릴 단위는 위 커밋들.
 
 올리지 말 것: `.pao/`, `.if/`, `_workspace/`, `.env`, identity, mailbox. (`.gitignore`가 이미 처리)
 
@@ -40,21 +47,19 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 ## 3. 버스 / 등록 (지금)
 
 - Bus: `D:\InquiryFoundry\.pao`
-- `registry_version`: **16**
+- `registry_version`: **20**
 - 슬롯 **3개**. 이종 벤더 3종이 같은 계약 아래 등록돼 있다 — **함부로 은퇴시키지 말 것.**
 
 | 슬롯 | gen | profile | slice | 상태 |
 |---|---:|---|---:|---|
-| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` / agent | **540s** | active. 세션 종료 후 **재등록 없이 RESUME**(gen 3 유지, registry 무변이). evidence가 가장 두꺼운 슬롯 |
-| LWAR2 | 3 | Kimi Code CLI / `kimi_cli` / `moonshot` / **cli** | 3000s | active. adherence probe 1회 실패 후 **3연속 통과** (§5) |
-| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` / agent | 3000s | active. 40+슬라이스 무중단. cwd에 헬퍼 파일을 남기는 성향 |
+| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` / agent | **540s** | **stale** (2026-08-18 크래시로 watcher 소멸). identity 유효 → 세션 재기동 시 RESUME. evidence가 가장 두꺼운 슬롯 |
+| LWAR2 | 3 | Kimi Code CLI / `kimi_cli` / `moonshot` / **cli** | 3000s | **stale** (크래시). identity 유효. adherence probe 1회 실패 후 **3연속 통과** (§5) |
+| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` / agent | 3000s | **stale** (크래시). identity 유효. 40+슬라이스 무중단 이력. cwd에 헬퍼 파일을 남기는 성향 |
 
   instance_id — LWAR1 `…b9518c13…` / LWAR2 `…50630f48…` / LWAR3 `…dbaa67bc…` (회수 명령에 정확한 튜플 필요)
 
-  **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO 등록·일반 태스크는 정상 (실제로 `--auto`가 LWAR1에 배정한 태스크가 통과했다). **IF 런에만 배제가 걸리며, 그 배제는 코드가 아니라 운영자 규율이다 — §7 경고를 반드시 읽을 것.**
-- 이번 세션에서 회수한 슬롯 (tombstone에 generation 보존):
-  - **LWAR1** — Grok 스모크 슬롯. 미수령 `shutdown` control 만료 후 `retire-stale`. mode `stale_idle_reap`
-  - **LWAR2** — DeepSeek 리뷰 세션이 남긴 미채택 등록. `reclaim-unadopted`. mode `unadopted_reap`
+  **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO 등록·일반 태스크는 정상 (실제로 `--auto`가 LWAR1에 배정한 태스크가 통과했다). **IF 런에만 배제가 걸리며, 이제 `cycle.reject_excluded()` 가 코드로 강제한다 — §7 참조. 현 로스터로는 `normal` 모드 IF 런이 불가능하다.**
+- 슬롯 이력: LWAR1·LWAR2 는 한 번씩 회수(`retire-stale` / `reclaim-unadopted`)된 뒤 **새 벤더가 generation 3 으로 재사용**한 자리다. 현재 tombstone 은 `LWAR4 gen1` 하나뿐.
 - audit `healthy`, degraded/pending 0.
 
 다음 OA: 새 `PAO_OA_ID` mint → `doctor --role oa` → `presence` → `reconcile` → `status`.
@@ -160,6 +165,59 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 > `normal` 모드는 `>= 3 LWAR`를 요구하므로 `Blocked`된다.
 > IF 런을 재개하려면 **alibaba가 아닌 LWAR 1대를 더 붙여야 한다**(예: Claude Code=anthropic, Codex=openai, DeepSeek=deepseek).
 > `mode`를 낮추는 선택지도 있으나 그것은 IF 설계의 결정이다.
+
+---
+
+## 7.5 하드 크래시 복구 — `.pao-*.tmp` 잔해 (2026-08-18 실제 발생)
+
+전원 차단으로 컴퓨터가 다운되면 **`doctor`가 unhealthy가 되어 버스 전체가 잠긴다.** 절차를 모르면 재기동이 불가능하다.
+
+### 무엇이 남는가
+
+`common.atomic_write_json()` 은 `NamedTemporaryFile(prefix=".pao-", suffix=".tmp")` → `fsync` → `os.replace` 순서로 쓰고,
+`finally` 에서 임시 파일을 지운다. **하드 크래시는 그 `finally` 를 실행시키지 않는다.**
+결과로 `.pao/mailbox/LWARn/.pao-XXXXXXXX.tmp` 고아가 남는다.
+
+### 왜 치명적인가
+
+- `doctor` 의 `no_leftover_tmp` 체크가 **일정 나이 이상의** `.pao-*.tmp` 를 발견하면 unhealthy 를 반환한다.
+- 계약상 **OA·LWAR 모두 `doctor` 실패 시 중단**한다 → 어떤 LWAR도 재기동할 수 없고 OA도 버스를 변경할 수 없다.
+- **이 파일을 지우는 CLI 경로가 없다.** `prune` 의 대상은 `archive/*`, `failed`, `quarantine`, `cancelled` 뿐이고
+  `doctor` 는 보고만 한다. 즉 무해한 잔해 하나가 버스를 영구히 잠근다.
+
+### 복구 절차 (실제 수행 검증됨)
+
+```bash
+# 1. 무엇이 남았는지 확인
+python .agents/skills/pao-oa/scripts/pao.py doctor --role oa      # detail 에 경로가 나온다
+find .pao -name ".pao-*.tmp"
+
+# 2. 내용을 반드시 확인한다 — 지우기 전에 무엇인지 알아야 한다
+cat .pao/mailbox/LWARn/.pao-XXXXXXXX.tmp
+cat .pao/mailbox/LWARn/heartbeat.json      # 대개 heartbeat 쓰기 도중이다
+
+# 3. 커밋본과 어느 필드가 다른지 비교. last_seen 만 다르면 순수 중복본이다
+# 4. 증거를 백업한 뒤 삭제
+# 5. doctor 재확인 → healthy
+```
+
+**판단 기준**: 커밋본이 유효하고 tmp 가 그 중복본이면 삭제해도 정보 손실이 0이다.
+tmp 가 `result.json` / `task` / `registry` 계열이면 **삭제하지 말고 내용을 먼저 보고**할 것 — 그건 다른 사건이다.
+
+### 2026-08-18 사례
+
+`LWAR2/.pao-x6to70i8.tmp` = 크래시 순간 진행 중이던 heartbeat 쓰기.
+tmp `last_seen=05:52:02.435874Z` vs 커밋본 `05:51:57.286903Z` (폴링 주기 5초 차),
+그 외 전 필드 동일. 백업 후 삭제 → `doctor` 양쪽 healthy 복구.
+
+**손실 0이었다**: 크래시 순간 3대 모두 유휴(`watching`/`current_task_id=None`), 전 큐 채널 공백,
+마지막 커밋(`4f6eb52`)은 크래시 19분 전에 push 완료, `pytest` 73 passed 재확인.
+
+### ⚠ 미해결 구조 결함
+
+"CLI 로 지울 수 없는 파일이 `doctor` 를 막고, `doctor` 실패는 전 역할 중단"이라는 구조가 그대로 남아 있다.
+`pao.py doctor --clear-leftover-tmp` 같은 **명시적·검증된 정리 경로**를 두는 것이 자연스러우나,
+런타임 변경이므로 별도 결정 사항으로 남긴다.
 
 ---
 
