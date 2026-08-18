@@ -93,8 +93,11 @@ python "<PAO_SKILL>/scripts/oa.py" dead --lwar-id LWAR1 --requeue TASK_ID
   `retire-stale` requires it to be empty. A `shutdown` sent to stop a dead
   watcher therefore blocks reclaiming its own slot. The command re-checks the
   identity tuple, refuses a slot whose matching heartbeat is fresher than
-  `--control-older-than` (`watcher_alive`), and expires only controls older than
-  that threshold. Original bytes are preserved: each control is moved unchanged
+  `--control-older-than` (`watcher_alive`), refuses a heartbeat that is
+  `running` or carries a `current_task_id` **whatever its age**
+  (`watcher_busy` — a busy exit-notify LWAR has a frozen heartbeat, so age alone
+  would authorize discarding the controls its next slice is about to claim), and
+  expires only controls older than that threshold. Original bytes are preserved: each control is moved unchanged
   into `archive/control/` beside a `.expired.json` sidecar recording the
   command, age, threshold, and operator reason. Run it before `retire-stale`
   when that command reports `active_work: {"control": N}`.
@@ -122,6 +125,23 @@ python "<PAO_SKILL>/scripts/oa.py" control --lwar-id LWAR1 --command shutdown
 ```
 
 - Control delivery is at-least-once: the watcher keeps a claimed control until it acknowledges the emitted event. Handlers must therefore be idempotent.
+- **`cancel` is a claim guard, not a stop button.** On an exit-notify LWAR — the
+  default, and every runtime measured so far — the watcher exits when it
+  delivers a task, so nothing is polling the mailbox while the agent executes. A
+  cancel published against an in-flight task is not delivered until the next
+  slice, by which time the task has already submitted its own terminal result
+  (`succeeded` if the work succeeded); `collect` then closes the stale tombstone
+  as `tombstone_consumed_result_exists`. Cancelling a task that has **not** been
+  claimed yet does work exactly as intended: the watcher writes a tombstone,
+  auto-submits `cancelled` without involving the agent, and the task never runs.
+  Plan around this — bound `timeout_s` and task scope instead of expecting to
+  interrupt work already delivered.
+- **A busy exit-notify LWAR looks stale.** Its heartbeat is written by the
+  watcher, which has exited, so `last_seen` freezes at the moment of delivery
+  while `status` stays `running` with a `current_task_id`. Any task longer than
+  `--stale-after` (default 120s) therefore shows `runtime_status=stale` on a
+  healthy runtime. Read `status` + `current_task_id` before concluding a runtime
+  died; the lease, not the heartbeat, is what bounds a lost claim.
 - `shutdown` requests a resumable ADP stop and deliberately retains the slot.
 - `retire` requests a clean one-time shutdown: LWAR submits any terminal result,
   then repeatedly drives `on → draining → off → deregistered` with `lwar.py

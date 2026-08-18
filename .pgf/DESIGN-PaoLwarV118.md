@@ -638,4 +638,71 @@ evidence에 파일별 sha256과 **두 번의 독립 read-back 패스**를 요구
 
 ### 남은 미검증
 
-`cancel` / `drain` 경로. exit-notify에서 cancel은 실행 중 도달하지 않고 다음 슬라이스에서 처리되는데(P1 CancelLimitNote), 그 지연 상한이 실측된 적은 없다.
+`cancel` / `drain` 경로. → §15에서 cancel 해소, drain은 보류(사유 기재).
+
+---
+
+## 15. cancel 경로 실증과 그로 인한 정정 (2026-08-18)
+
+LWAR1(Qwen, 540s 슬라이스)에 두 갈래를 모두 실행했다.
+
+### 15.1 실행 중 cancel — **P1 CancelLimitNote 가 부정확했다**
+
+| 시각(UTC) | 사건 |
+|---|---|
+| 02:36:48 | 150초 태스크 `send` |
+| 02:36:52 | watcher claim → `task_received` → **watcher 종료** |
+| 02:36:50 | 마지막 heartbeat (이후 실행 내내 갱신 없음) |
+| 02:38:04 | 실행 76초 시점에 `control cancel` 발행 |
+| 02:41:36 | **`status=succeeded`**, `done.txt` 생성됨 |
+
+LWAR 자신의 evidence: `cancel_received_during_execution: false`.
+cancel control은 실행 내내 `control/`에 **미수령(0 claimed)** 상태로 대기했고,
+`complete` 후 watcher가 재기동해서야 claim → 이미 끝난 `task_id`에 tombstone을 썼으며,
+OA `collect`가 `tombstone_consumed_result_exists`로 닫았다.
+
+P1에서 나는 *"중단 지연 상한은 해당 태스크의 실행 시간"*이라고 썼다. 이는 **결국 취소된다**는 뜻을 함축하는데 사실이 아니다.
+**exit-notify에서 실행 중인 태스크는 취소되지 않는다.** 정상 완료되고 자기 terminal result를 제출한다.
+`cancel`은 **중단 버튼이 아니라 claim guard**다. 문서를 그렇게 정정했다(`adp-loop.md`, OA `recover-maintain.md`).
+
+### 15.2 미claim 태스크 cancel — 설계대로 완벽
+
+cancel을 **먼저** 발행하고 태스크를 나중에 발행했다.
+
+| 시각 | 사건 |
+|---|---|
+| 02:42:43 | watcher가 control claim → `cancelled/task-pao-tomb-20260818.json` tombstone |
+| 02:42:55 | 태스크 발행 |
+| 02:43:01 | **`status=cancelled`**, `cancelled_by: watcher_tombstone`, 에이전트 미관여 |
+
+`must-not-exist.txt`는 생성되지 않았다 — 태스크가 에이전트에게 전달된 적이 없다. tombstone은 소비됐다.
+발행 → 취소 결과까지 **6초**.
+
+### 15.3 파생 발견 — 실행 중 LWAR은 stale로 보인다
+
+heartbeat을 쓰는 주체가 watcher인데 배달과 동시에 종료하므로, 에이전트가 실행하는 동안
+heartbeat은 `status=running` + `current_task_id`인 채 `last_seen`이 **얼어붙는다**.
+`--stale-after`(기본 120s)보다 긴 태스크는 전부 정상 동작 중에 `runtime_status=stale`로 보인다.
+
+**이것이 P4에서 내가 추가한 `recover --expire-controls`의 결함을 만들었다.**
+그 명령은 heartbeat **신선도만으로** `watcher_alive`를 판정했으므로,
+임계보다 긴 태스크 실행 중에 호출하면 다음 슬라이스가 정당하게 수령할 control을 **조용히 버린다**.
+`retire_stale`은 `running`/`current_task_id`를 별도로 거부(`heartbeat_not_idle`)하는데 이쪽에는 그 펜스가 없었다.
+
+수정: 나이와 무관하게 `running` 또는 `current_task_id` 보유 시 **`watcher_busy`로 거부**.
+회귀 테스트 2건 추가 — busy면 stale이어도 거부, idle-stale이면 정상 만료(명령의 존재 이유가 막히지 않도록).
+
+### 15.4 `drain` — 의도적 보류
+
+실행하지 않았다. OA control 집합은 `{shutdown, retire, ping, cancel, drain}`이고 **resume/undrain이 없다**.
+lifecycle 상태 변경은 LWAR가 요청하고 OA는 `reconcile`로 승인만 한다.
+게다가 `lifecycle.md`는 OA-initiated drain 이후 LWAR에게 *"`shutdown`까지 계속 watch하라"*고 지시하므로,
+LWAR가 스스로 `state on`을 요청하지 않는다.
+
+→ **OA가 건 drain은 OA가 되돌릴 수 없다.** 검증된 라이브 LWAR 2대뿐인 상태에서
+복구 수단 없는 일방향 조작을 실행하는 것은 부당하다고 판단해 보류하고, 이 비대칭 자체를 결함으로 기록한다.
+
+**새 항목 D38 — `drain`의 일방향성**: OA에게 `resume`/`undrain` control이 없다.
+선택지는 (A) `control --command resume` 추가(LWAR가 `state on` 요청을 발행하도록), (B) OA-initiated drain 이후 LWAR가
+`state on`을 요청해도 되는 조건을 `lifecycle.md`에 명시, (C) 현행 유지하되 "drain은 사실상 shutdown 예약"임을 문서화.
+미결 — 정욱님 판단 필요.

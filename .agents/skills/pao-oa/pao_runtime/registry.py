@@ -470,6 +470,22 @@ class RegistryService:
                 and heartbeat.get("instance_id") == instance_id
                 and heartbeat.get("generation") == generation
             ):
+                # Busy fence, and age cannot substitute for it. Under exit-notify
+                # the watcher exits when it delivers a task, so nothing writes a
+                # heartbeat while the agent executes: a correctly working LWAR
+                # sits at `running` with a frozen `last_seen` for the whole task.
+                # Expiring on age alone would silently drop the controls its next
+                # slice is about to claim.
+                if (
+                    heartbeat.get("status") == "running"
+                    or heartbeat.get("current_task_id") is not None
+                ):
+                    return {
+                        "accepted": False,
+                        "reason": "watcher_busy",
+                        "current_task_id": heartbeat.get("current_task_id"),
+                        "expired": [],
+                    }
                 try:
                     heartbeat_age_s = max(
                         0.0,

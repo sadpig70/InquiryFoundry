@@ -224,13 +224,24 @@ Error discipline. `adp_error` (exit 30) means the watcher itself hit a fatal con
 Cancel reaching an agent mid-execution. Under **live-notify** the watcher keeps
 running while you execute, so `control:cancel` arrives as a host-injected stdout
 line: stop the task and submit a `cancelled` result. Do not start a second
-watcher to look for cancel. Under **exit-notify** the watcher has already exited
-and must not be restarted before `complete`, so a cancel cannot reach a task
-that is already executing — it is delivered on the next slice, after `complete`,
-as `control:cancel` or through the tombstone. The upper bound on cancellation
-delay is therefore that task's own execution time; this is a known limit of the
-style, not a fault. (A cancel for a task you have not yet claimed needs no agent
-action — the tombstone handles it, see below.)
+watcher to look for cancel.
+
+Under **exit-notify** the watcher has already exited and must not be restarted
+before `complete`, so **a cancel cannot stop a task that is already executing.**
+This is not delayed cancellation: the task runs to completion and submits its
+own terminal result — `succeeded` if the work succeeded. The cancel is claimed
+on the next slice, writes a tombstone for a `task_id` that is already finished,
+and OA's `collect` closes it as `tombstone_consumed_result_exists`. Measured on
+a live bus: a 150-second task cancelled 76 seconds in still submitted
+`succeeded`.
+
+So `control:cancel` under exit-notify is a **claim guard, not a stop button**.
+It reliably prevents a task from ever starting (see the tombstone section
+below); it cannot recall work already delivered. OA must size timeouts and task
+scope accordingly rather than expecting to interrupt.
+
+(A cancel for a task you have not yet claimed needs no agent action — the
+tombstone handles it, see below.)
 
 When the slot is expected to stay in a non-`on` state for a while (e.g. `draining` wind-down), pass `--state-wait-backoff-max SECONDS` so the in-slice poll interval doubles up to that cap instead of busy-polling at `--interval`; it resets automatically when the state returns to `on`.
 

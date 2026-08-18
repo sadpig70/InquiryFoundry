@@ -252,6 +252,45 @@ def test_expire_pending_control_refuses_live_watcher(tmp_path):
     assert len(list((tmp_path / "mailbox" / "LWAR1" / "control").glob("*.json"))) == 1
 
 
+def test_expire_pending_control_refuses_busy_watcher_even_when_stale(tmp_path):
+    """Under exit-notify the watcher exits to deliver a task, so a correctly
+    working LWAR shows `running` with a frozen heartbeat for the whole task.
+    Age alone must never authorize expiring the controls its next slice claims.
+    """
+    _seed_registry(tmp_path)
+    _write_heartbeat(
+        tmp_path, "LWAR1", instance_id=INST, generation=2, status="running", age_s=30000.0
+    )
+    hb = tmp_path / "mailbox" / "LWAR1" / "heartbeat.json"
+    payload = json.loads(hb.read_text())
+    payload["current_task_id"] = "task-long-running"
+    atomic_write_json(hb, payload)
+    _write_control(tmp_path, "LWAR1", "control-" + "2" * 32, age_s=30000.0)
+    service = RegistryService(tmp_path)
+
+    outcome = service.expire_pending_control("LWAR1", INST, 2, 600.0, "looks stale but is busy")
+
+    assert outcome["accepted"] is False
+    assert outcome["reason"] == "watcher_busy"
+    assert outcome["current_task_id"] == "task-long-running"
+    assert len(list((tmp_path / "mailbox" / "LWAR1" / "control").glob("*.json"))) == 1
+
+
+def test_expire_pending_control_allows_idle_stale_watcher(tmp_path):
+    """The busy fence must not block the case the command exists for."""
+    _seed_registry(tmp_path)
+    _write_heartbeat(
+        tmp_path, "LWAR1", instance_id=INST, generation=2, status="watching", age_s=30000.0
+    )
+    _write_control(tmp_path, "LWAR1", "control-" + "3" * 32, age_s=30000.0)
+    service = RegistryService(tmp_path)
+
+    outcome = service.expire_pending_control("LWAR1", INST, 2, 600.0, "dead watcher")
+
+    assert outcome["accepted"] is True
+    assert len(outcome["expired"]) == 1
+
+
 def test_expire_pending_control_skips_recent_controls(tmp_path):
     _seed_registry(tmp_path)
     _write_control(tmp_path, "LWAR1", "control-" + "0" * 32, age_s=5.0)
