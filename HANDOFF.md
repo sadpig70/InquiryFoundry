@@ -213,11 +213,23 @@ tmp `last_seen=05:52:02.435874Z` vs 커밋본 `05:51:57.286903Z` (폴링 주기 
 **손실 0이었다**: 크래시 순간 3대 모두 유휴(`watching`/`current_task_id=None`), 전 큐 채널 공백,
 마지막 커밋(`4f6eb52`)은 크래시 19분 전에 push 완료, `pytest` 73 passed 재확인.
 
-### ⚠ 미해결 구조 결함
+### 해소됨 — `doctor --clear-leftover-tmp` (2026-08-18)
 
-"CLI 로 지울 수 없는 파일이 `doctor` 를 막고, `doctor` 실패는 전 역할 중단"이라는 구조가 그대로 남아 있다.
-`pao.py doctor --clear-leftover-tmp` 같은 **명시적·검증된 정리 경로**를 두는 것이 자연스러우나,
-런타임 변경이므로 별도 결정 사항으로 남긴다.
+이제 정리 경로가 있다. **플래그 없이는 현행과 동일하게 아무것도 지우지 않는다.**
+
+```bash
+python .agents/skills/pao-oa/scripts/pao.py doctor --role oa --clear-leftover-tmp
+```
+
+**지우는 것은 단 하나** — `schema_version=pao.heartbeat.v1` 이고, 같은 디렉터리의 `heartbeat.json` 이
+존재·파싱되며 `lwar_id`/`instance_id`/`generation` 이 일치하는 경우다. 그때 커밋본이 권위이고 tmp 는 중복본이다.
+
+**나머지는 전부 보존하고 이유와 함께 보고한다** — `unparseable`, `not_a_heartbeat:<schema>`,
+`no_committed_heartbeat`(tmp 가 유일본일 수 있다), `identity_differs_from_committed`, `became_recent`, `unlink_failed:*`.
+즉 `result`/`task`/`registry` 계열 고아는 **여전히 doctor 를 막으며 사람의 판단을 요구한다** — 그것이 의도다.
+
+정리된 항목은 audit 에 `leftover_tmp_cleared` 로 기록된다(조용한 삭제 없음).
+회귀 테스트 10건: `tests/pao/test_leftover_tmp.py`.
 
 ---
 

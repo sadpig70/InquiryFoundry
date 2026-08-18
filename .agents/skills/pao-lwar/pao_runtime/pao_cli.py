@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from . import __version__
+from . import audit
 from .common import (
     atomic_write_json,
     emit,
@@ -164,6 +165,80 @@ def _legacy_bus_records(root: Path) -> list[str]:
     return legacy
 
 
+def _leftover_tmp_verdict(path: Path) -> tuple[bool, str]:
+    """Decide whether one aged temp file is provably safe to delete.
+
+    A hard power-off kills the process between the temp write and os.replace,
+    so atomic_write_json's finally never runs and the orphan makes doctor
+    unhealthy — which stops every role by contract. Clearing it must therefore
+    be possible, but only where the loss is provably nil.
+
+    Safe means exactly one thing: the temp is a heartbeat write whose committed
+    sibling exists, parses, and belongs to the same identity. The committed file
+    is then authoritative and the temp is a redundant copy of it. Everything
+    else is preserved and reported, because a temp holding a result, a task, or
+    registry state may be the only copy of something that has no other record.
+    """
+    payload = safe_load_json(path)
+    if payload is None:
+        return False, "unparseable"
+    if not isinstance(payload, dict):
+        return False, "not_an_object"
+    schema = payload.get("schema_version")
+    if schema != "pao.heartbeat.v1":
+        return False, f"not_a_heartbeat:{schema or 'unknown'}"
+
+    committed_path = path.parent / "heartbeat.json"
+    if not committed_path.is_file():
+        # The temp may be the only surviving copy — never remove it.
+        return False, "no_committed_heartbeat"
+    committed = safe_load_json(committed_path)
+    if not isinstance(committed, dict):
+        return False, "committed_heartbeat_unreadable"
+
+    identity = ("lwar_id", "instance_id", "generation")
+    if any(payload.get(key) != committed.get(key) for key in identity):
+        return False, "identity_differs_from_committed"
+    return True, "redundant_heartbeat"
+
+
+def _clear_leftover_tmp(
+    root: Path, leftovers: list[Path], cutoff: float, role: str | None
+) -> tuple[list[str], list[dict[str, str]]]:
+    """Remove only the leftovers proven redundant; report every decision."""
+    cleared: list[str] = []
+    preserved: list[dict[str, str]] = []
+    for path in leftovers:
+        safe, reason = _leftover_tmp_verdict(path)
+        if not safe:
+            preserved.append({"path": str(path), "reason": reason})
+            continue
+        try:
+            # Re-stat immediately before unlink: an in-flight write must never
+            # be removed because it aged between the scan and this moment.
+            if path.stat().st_mtime >= cutoff:
+                preserved.append({"path": str(path), "reason": "became_recent"})
+                continue
+            path.unlink()
+        except OSError as error:
+            preserved.append({"path": str(path), "reason": f"unlink_failed:{error}"})
+            continue
+        cleared.append(str(path))
+
+    if cleared or preserved:
+        # Silent deletion is what made the original orphan hard to reason about.
+        audit.record(
+            root,
+            role if role in ("oa", "lwar") else "oa",
+            {
+                "event": "leftover_tmp_cleared",
+                "cleared": cleared,
+                "preserved": preserved,
+            },
+        )
+    return cleared, preserved
+
+
 def command_doctor(args: argparse.Namespace) -> int:
     root = resolve_root(args.root)
     package_dir = Path(__file__).resolve().parent
@@ -255,12 +330,28 @@ def command_doctor(args: argparse.Namespace) -> int:
     for path in root.rglob(".pao-*.tmp"):
         try:
             if path.is_file() and path.stat().st_mtime < cutoff:
-                leftovers.append(str(path))
+                leftovers.append(path)
         except FileNotFoundError:
             # An in-flight atomic write deleted its temp between glob and stat
             # on a healthy busy bus — not a leftover, keep scanning.
             continue
-    checks.append(_check("no_leftover_tmp", not leftovers, leftovers or None))
+
+    cleared, preserved = [], []
+    if leftovers and getattr(args, "clear_leftover_tmp", False):
+        cleared, preserved = _clear_leftover_tmp(root, leftovers, cutoff, args.role)
+        leftovers = [path for path in leftovers if str(path) not in cleared]
+
+    checks.append(
+        _check("no_leftover_tmp", not leftovers, [str(p) for p in leftovers] or None)
+    )
+    if cleared or preserved:
+        checks.append(
+            _check(
+                "leftover_tmp_cleanup",
+                True,
+                {"cleared": cleared, "preserved": preserved},
+            )
+        )
 
     healthy = all(entry["ok"] for entry in checks)
     emit(
@@ -334,6 +425,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor.add_argument("--role", choices=("oa", "lwar"), default=None)
     doctor.add_argument("--root", default=None)
+    doctor.add_argument(
+        "--clear-leftover-tmp",
+        action="store_true",
+        help="delete aged .pao-*.tmp orphans left by a hard crash, but only "
+        "those proven redundant (a heartbeat write whose committed sibling "
+        "exists and matches); everything else is preserved and reported",
+    )
     doctor.set_defaults(handler=command_doctor)
 
     install = subparsers.add_parser(
