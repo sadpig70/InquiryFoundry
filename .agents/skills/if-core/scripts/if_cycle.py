@@ -29,7 +29,7 @@ def main() -> int:
     run = sub.add_parser("run")
     run.add_argument("--brief", required=True)
     run.add_argument("--if-root")
-    run.add_argument("--lwars", required=True, help="LWAR1:anthropic,LWAR2:openai,LWAR3:alibaba")
+    run.add_argument("--lwars", required=True, help="LWAR1:anthropic,LWAR2:openai,LWAR3:xai")
     run.add_argument("--pack", action="append", default=[], help="kind=path")
     run.add_argument("--pao", action="store_true", help="publish via PAO bus (publish_collect)")
     close = sub.add_parser("close")

@@ -10,7 +10,7 @@ from pathlib import Path
 from .allocate import build_allocation, inject_divergence, vendor_family
 from .bus import ensure_jail, publish_collect
 from .compose import compose, stamp_lineage
-from .const import PRIOR_N, TH_MEAN, TH_PAIR
+from .const import EXCLUDE_ADAPTERS, EXCLUDE_FAMILIES, PRIOR_N, TH_MEAN, TH_PAIR
 from .contrarian import cross_examine
 from .generate import generate
 from .judge import blind_packet, judge
@@ -317,9 +317,32 @@ def exploit_loop_pao(run: Run, seeds: list, lwars: list, mode: str) -> tuple[dic
     return dissents, cards
 
 
+def reject_excluded(lwars: list[dict]) -> None:
+    """Refuse a roster containing an excluded vendor family or adapter.
+
+    Rejects the roster rather than silently filtering it: dropping members
+    would quietly turn a three-LWAR run into a two-LWAR one and change what the
+    heterogeneity checks are measuring, which is exactly the kind of invisible
+    reshaping that makes a run hard to reason about afterwards. The operator
+    passes the roster, so the operator fixes it.
+    """
+    bad = []
+    for lwar in lwars:
+        fam = vendor_family(lwar)
+        if fam in EXCLUDE_FAMILIES:
+            bad.append(f"{lwar.get('lwar_id')} (vendor_family={fam})")
+            continue
+        adapter = lwar.get("adapter_id") or (lwar.get("profile") or {}).get("adapter_id")
+        if adapter and str(adapter).lower() in EXCLUDE_ADAPTERS:
+            bad.append(f"{lwar.get('lwar_id')} (adapter_id={adapter})")
+    if bad:
+        raise Blocked("excluded from IF runs: " + ", ".join(bad))
+
+
 def inquiry_cycle(brief: dict, lwars: list[dict], if_root=None, packs=None, pao: bool = False) -> dict:
     if not (brief.get("evidence_hints") or {}):
         raise Blocked("evidence_hints empty")
+    reject_excluded(lwars)
     mode = brief.get("mode", "normal")
     if mode == "normal" and len(lwars) < 3:
         raise Blocked("normal mode needs >= 3 LWARs")

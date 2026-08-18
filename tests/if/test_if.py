@@ -15,7 +15,7 @@ sys.path.insert(0, str(CORE))
 from if_core.allocate import build_allocation, vendor_family
 from if_core.bus import assert_visible, ensure_jail, make_pao_task, phase_of
 from if_core.const import OPERATORS
-from if_core.cycle import close_run, inquiry_cycle, mint_anon
+from if_core.cycle import close_run, inquiry_cycle, mint_anon, reject_excluded
 from if_core.gates import mechanical_gates, source_in_hints
 from if_core.schema import SchemaError, validate_obj
 from if_core.state import TransitionError, assert_transition
@@ -109,6 +109,89 @@ def test_missing_vendor_family():
         vendor_family({"lwar_id": "LWAR1"})
 
 
+def test_excluded_family_rejects_roster(tmp_path):
+    """EXCLUDE_FAMILIES was declared but referenced nowhere, so the policy had
+    no effect and only operator discipline kept an excluded vendor out. These
+    tests exist so it cannot go inert again."""
+    brief = load("brief.yaml")
+    brief["brief_id"] = "RUN-20260814-excl-fam"
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
+        {"lwar_id": "LWAR2", "vendor_family": "openai"},
+        {"lwar_id": "LWAR3", "vendor_family": "alibaba"},
+    ]
+    with pytest.raises(Blocked, match="excluded from IF runs"):
+        inquiry_cycle(brief, lwars, tmp_path, {"papers": FIX / "papers.txt"})
+
+
+def test_excluded_family_normalized_alias_rejected():
+    # FAMILY_NORM maps the runtime alias onto the excluded family.
+    with pytest.raises(Blocked, match="LWAR3"):
+        reject_excluded([{"lwar_id": "LWAR3", "vendor_family": "qwen"}])
+
+
+def test_excluded_adapter_rejected():
+    with pytest.raises(Blocked, match="adapter_id"):
+        reject_excluded(
+            [{"lwar_id": "LWAR2", "vendor_family": "openai", "adapter_id": "qwen"}]
+        )
+
+
+def test_excluded_reads_adapter_from_profile():
+    with pytest.raises(Blocked, match="adapter_id"):
+        reject_excluded(
+            [
+                {
+                    "lwar_id": "LWAR2",
+                    "profile": {"vendor_family": "openai", "adapter_id": "qwen"},
+                }
+            ]
+        )
+
+
+def test_excluded_registry_shaped_entry_rejected():
+    """The shape an IF run actually receives from the PAO registry. Note the
+    live adapter_id is `qwen_code`, which EXCLUDE_ADAPTERS does not list — the
+    family check is what catches it, so both checks must stay."""
+    with pytest.raises(Blocked, match="vendor_family=alibaba"):
+        reject_excluded(
+            [
+                {
+                    "lwar_id": "LWAR1",
+                    "profile": {
+                        "vendor_family": "alibaba",
+                        "adapter_id": "qwen_code",
+                        "capabilities": ["coding", "testing"],
+                    },
+                }
+            ]
+        )
+
+
+def test_compliant_roster_passes_exclusion():
+    reject_excluded(
+        [
+            {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
+            {"lwar_id": "LWAR2", "vendor_family": "openai", "adapter_id": "codex"},
+            {"lwar_id": "LWAR3", "vendor_family": "xai"},
+        ]
+    )
+
+
+def test_exclusion_names_every_offender():
+    with pytest.raises(Blocked) as err:
+        reject_excluded(
+            [
+                {"lwar_id": "LWAR1", "vendor_family": "alibaba"},
+                {"lwar_id": "LWAR2", "vendor_family": "openai"},
+                {"lwar_id": "LWAR3", "vendor_family": "qwen"},
+            ]
+        )
+    message = str(err.value)
+    assert "LWAR1" in message and "LWAR3" in message
+    assert "LWAR2" not in message
+
+
 def test_phase_of_and_task_id():
     assert phase_of("generate") == "EXPLORE"
     t = make_pao_task("RUN-1", "generate", "LWAR1", Path("/tmp/jail"), "inbox/a.yaml", "outbox/a.yaml")
@@ -154,7 +237,7 @@ def test_e2e_fixture_and_close(tmp_path):
     lwars = [
         {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
         {"lwar_id": "LWAR2", "vendor_family": "openai"},
-        {"lwar_id": "LWAR3", "vendor_family": "alibaba"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
     ]
     packs = {"papers": FIX / "papers.txt"}
     report = inquiry_cycle(brief, lwars, tmp_path, packs)
@@ -184,7 +267,7 @@ def test_v15_ablation_adopt_no_mutation(tmp_path):
     lwars = [
         {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
         {"lwar_id": "LWAR2", "vendor_family": "openai"},
-        {"lwar_id": "LWAR3", "vendor_family": "alibaba"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
     ]
     report = inquiry_cycle(brief, lwars, tmp_path, {"papers": FIX / "papers.txt"})
     if report["seed_count"] == 0:
@@ -210,7 +293,7 @@ def test_v11_reviewed_resume(tmp_path):
     lwars = [
         {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
         {"lwar_id": "LWAR2", "vendor_family": "openai"},
-        {"lwar_id": "LWAR3", "vendor_family": "alibaba"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
     ]
     report = inquiry_cycle(brief, lwars, tmp_path, {"papers": FIX / "papers.txt"})
     if report["scored_count"] == 0:
@@ -243,7 +326,7 @@ def test_v7_empty_reviewer(tmp_path):
     lwars = [
         {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
         {"lwar_id": "LWAR2", "vendor_family": "openai"},
-        {"lwar_id": "LWAR3", "vendor_family": "alibaba"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
     ]
     report = inquiry_cycle(brief, lwars, tmp_path, {"papers": FIX / "papers.txt"})
     if report["seed_count"] == 0:
@@ -261,7 +344,7 @@ def test_v14_empty_unknowns(tmp_path):
     lwars = [
         {"lwar_id": "LWAR1", "vendor_family": "anthropic"},
         {"lwar_id": "LWAR2", "vendor_family": "openai"},
-        {"lwar_id": "LWAR3", "vendor_family": "alibaba"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
     ]
     report = inquiry_cycle(brief, lwars, tmp_path, {"papers": empty})
     assert report["seed_count"] == 0

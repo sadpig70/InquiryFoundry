@@ -139,33 +139,27 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 데이터: `.if/runs/…` (git 제외).
 기계 게이트: G-GROUND, G-CLEAR, G-PATH, G-TESTSHAPE. D18–D21 유효.
 
-### ⚠ Qwen/`alibaba` 배제는 **강제되지 않는다** (2026-08-18 확인)
+### Qwen/`alibaba` 배제 — **강제됨** (2026-08-18)
 
-`if-core/if_core/const.py`에 다음이 선언돼 있다:
+`if-core/if_core/const.py`의 `EXCLUDE_FAMILIES = {"alibaba"}` / `EXCLUDE_ADAPTERS = {"qwen"}` 는
+**정의만 되어 있고 어디서도 참조되지 않는 죽은 설정이었다.** `const.py`만 읽으면 "코드가 막아준다"고 오판하기 쉬웠고,
+실제 방어선은 `if_cycle.py --lwars`에 무엇을 적느냐뿐이었다.
 
-```python
-EXCLUDE_FAMILIES = {"alibaba"}
-EXCLUDE_ADAPTERS = {"qwen"}
-```
+이제 `cycle.reject_excluded()` 가 `inquiry_cycle` 진입부에서 강제한다.
 
-**그러나 이 두 상수는 정의부 외에 어디에서도 참조되지 않는다.** AST 검사로 확인했고 와일드카드 import도 없다.
-`inquiry_cycle(brief, lwars, …)` → `build_allocation(brief, lwars, …)` 는 넘어온 로스터를 **전부** 배정한다.
-즉 **유일한 방어선은 `if_cycle.py --lwars`에 무엇을 적느냐, 곧 운영자 규율이다.**
+- **필터가 아니라 거부다.** 로스터에서 조용히 빼면 3-LWAR 런이 2-LWAR로 바뀌어 heterogeneity 검사의 의미가 달라진다.
+  로스터는 운영자가 넘기므로 운영자가 고친다. 위반자를 **전부 이름으로** 지목한다.
+- 가족(`FAMILY_NORM` 정규화 후)과 `adapter_id` 둘 다 검사한다. 실서비스 `adapter_id`는 `qwen_code`인데
+  `EXCLUDE_ADAPTERS`에는 `qwen`만 있으므로 **가족 검사가 실제로 잡는 쪽**이다 — 두 검사 모두 유지할 것.
+- 회귀 테스트 7건 추가(`tests/if`). 다시 죽으면 테스트가 깨진다.
+- e2e 픽스처 5건의 `LWAR3: alibaba` → `xai` 로 교체, `if_cycle.py` CLI 도움말 예시도 교체(정책과 모순이었다).
 
-`const.py`만 읽으면 "코드가 막아준다"고 오판하기 쉽다. 실제로는 막지 않는다.
-
-강제하려면 결정이 필요하다 — 단순 수정이 아니다:
-
-1. `tests/if/test_if.py`의 **e2e 테스트 5건**이 `LWAR3: alibaba` 로스터를 쓴다. 배제를 강제하면
-   3-LWAR → 2-LWAR가 되어 `normal 모드는 >= 3 필요` 로 **5건 전부 `Blocked`** 가 된다.
-   픽스처의 벤더 조합을 바꿀지, 배제가 애초에 코드 경로용이 아닌지 결정해야 한다.
-2. `if_cycle.py`의 CLI 도움말이 `--lwars LWAR1:anthropic,LWAR2:openai,LWAR3:alibaba` 를
-   **예시로** 쓴다 — 같은 패키지 안에서 정책과 모순된다.
-3. 배제 사유(평가 blind성 / 과거 품질 / 기타)에 따라 강제 계층이 달라진다.
-   PAO 라우팅이 아니라 IF 배정 경계가 맞다 — PAO `--auto`는 IF를 몰라야 정상이다.
-
-권위는 `.pgf/DESIGN-InquiryFoundry.md` v0.2.3이며, IF 세만틱 변경은 그 설계의 결정이다.
-**이번 세션에서는 발견만 기록하고 코드를 바꾸지 않았다.**
+> ### ⚠ 지금 버스로는 `normal` 모드 IF 런이 불가능하다
+>
+> 현 로스터는 `LWAR1 alibaba / LWAR2 moonshot / LWAR3 xai`. LWAR1이 배제되면 **2대만 남고**,
+> `normal` 모드는 `>= 3 LWAR`를 요구하므로 `Blocked`된다.
+> IF 런을 재개하려면 **alibaba가 아닌 LWAR 1대를 더 붙여야 한다**(예: Claude Code=anthropic, Codex=openai, DeepSeek=deepseek).
+> `mode`를 낮추는 선택지도 있으나 그것은 IF 설계의 결정이다.
 
 ---
 
