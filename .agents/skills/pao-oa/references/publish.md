@@ -112,6 +112,16 @@ Planning is OA judgment; the mechanics to get right:
   artifact hash) rather than subjective — the LWAR submits evidence against them
   and OA `validate` re-checks. State match strictness explicitly (e.g. "exactly,
   no trailing newline").
+- **Name the property to verify, not just the target.** An observed failure:
+  a task required a file holding a counted number; the LWAR wrote the wrong
+  digit, verified it by re-reading the file's **length**, and submitted
+  `succeeded` — a wrong digit has the same length as a right one, so its own
+  check could not catch it. Re-issued with "compare the full byte sequence, not
+  the length" and "enumerate the array rather than inferring the count", the
+  same runtime passed. Where a value can be inferred instead of read, say which
+  one you mean; where a check has a weaker variant, say which check counts.
+  This costs one clause and closes the gap that mechanical validation cannot
+  see — every mechanical check passed on the failing result.
 - **Bounds**: give each task the tightest `permissions` (cwd-scoped read/write,
   `network: false` unless required) and a realistic `timeout_s`. `max_retries`
   (default 3) caps recovery attempts before dead-letter.

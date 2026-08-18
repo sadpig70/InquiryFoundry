@@ -41,12 +41,15 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 
 - Bus: `D:\InquiryFoundry\.pao`
 - `registry_version`: **16**
-- 슬롯 **2개, 둘 다 `on` / `active`**. 이종 벤더 동시 운용 중 — **함부로 은퇴시키지 말 것.**
+- 슬롯 **3개**. 이종 벤더 3종이 같은 계약 아래 등록돼 있다 — **함부로 은퇴시키지 말 것.**
 
-| 슬롯 | gen | profile | 슬라이스 | 비고 |
+| 슬롯 | gen | profile | slice | 상태 |
 |---|---:|---|---:|---|
-| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` | **540s** | `instance_id` `lwar-instance-b9518c1313ea43ddad013ae3efd3b96c`. 600s 상한 호스트 → 축소 슬라이스 실증 (§5) |
-| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` | 3000s | `instance_id` `lwar-instance-dbaa67bc3bbe44c8a0a852188c4e8d8b`. 31슬라이스 25시간 무중단 |
+| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` / agent | **540s** | **stale** — 세션 종료(마지막 슬라이스 정상 완주 후 미재기동). 미완 작업 0, 손실 없음. Qwen 세션 재개 예정이면 그대로 둘 것 |
+| LWAR2 | 3 | Kimi Code CLI / `kimi_cli` / `moonshot` / **cli** | 3000s | active. adherence probe 1회 실패 후 재시도 통과 (§5) |
+| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` / agent | 3000s | active. 40+슬라이스 무중단 |
+
+  instance_id — LWAR1 `…b9518c13…` / LWAR2 `…50630f48…` / LWAR3 `…dbaa67bc…` (회수 명령에 정확한 튜플 필요)
 
   **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO LWAR 등록은 정욱님의 명시적 지시로 승인했으나, **IF 태스크는 이 슬롯에 라우팅하지 않는다** (배제 유효 여부 미확인).
 - 이번 세션에서 회수한 슬롯 (tombstone에 generation 보존):

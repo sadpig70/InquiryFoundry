@@ -737,9 +737,8 @@ oa.py control --lwar-id LWARn --command ping --reason "pao-resume: <사유>"
 | 상태 영향 | **없음** — 규약의 "그 외에는 평소대로" 분기대로 `on` 유지 |
 | 복귀 | `inactive`(handling) → `active`, 약 13초 |
 
-**resume 동작 자체는 미검증이다.** 검증하려면 라이브 LWAR을 drain해야 하는데,
-현재 LWAR1·LWAR3는 **이 규약이 존재하기 전에** 번들을 읽은 세션이다 — 컨텍스트에 규약이 없으므로 resume ping을 이해하지 못한다.
-즉 지금 drain하면 여전히 복구 불가다. **규약의 전제는 "LWAR가 이 규약이 담긴 번들을 읽었을 것"**이며, 다음 신규 등록부터 성립한다.
+**resume 동작은 §17에서 실증됐다.** 규약 커밋 이후 등록한 첫 세션(LWAR2, Kimi)이 왕복을 완주했다.
+규약의 전제는 여전히 **"LWAR가 이 규약이 담긴 번들을 읽었을 것"**이다 — 그 이전에 시작된 세션(LWAR1·LWAR3)에는 적용되지 않는다.
 
 ### 규약의 한계 (문서에 명시)
 
@@ -752,3 +751,72 @@ oa.py control --lwar-id LWARn --command ping --reason "pao-resume: <사유>"
 이번 ping 중 `runtime_status=inactive`가 관측됐다. `routing.py:73` 기준
 **신선한 heartbeat인데 status가 routable 집합(`watching`/`idle`/`running`)이 아닌 경우**이며, control 처리 중의 `control` 상태가 이에 해당한다.
 `reconcile.md`는 네 값만 설명하고 있었다 — `inactive`(일시적·정상)와, 실행 중 exit-notify LWAR이 `stale`로 보이는 이유를 함께 추가했다.
+
+---
+
+## 17. v1.18 최종 검증 — Kimi LWAR2 (2026-08-18)
+
+Kimi Code CLI가 **LWAR2 generation 3**(`kimi_cli` / `moonshot` / **`cli`**)로 등록했다.
+이 버스 최초의 `interface=cli` 등록이며(기존은 전부 `agent`), P6에서 정의한 4값 구분이 실제로 쓰였다.
+회수했던 LWAR2 슬롯의 두 번째 재사용이기도 하다.
+
+슬라이스: `--max-runtime-s 3000`(기본값). Kimi는 ~1시간 job 한도라 `3000 < 3600`이므로 축소가 불필요하다 —
+**Qwen(600s 상한 → 540)의 대조군**으로, P2 §1b가 "상한이 슬라이스보다 크면 기본값 유지"도 올바르게 처리함을 보인다.
+
+### 17.1 adherence 실패와 재시도 — probe 설계의 유효성
+
+**ack3 실패.** `count.txt`가 `b'3
+'`이었으나 발행 계약의 `completion_criteria`는 **4개**였다.
+`ack.txt`·`echo.txt`는 정확했으므로 계약을 부분적으로는 읽었다. evidence의 검증 방법이 결정적이었다 —
+*"re-read to verify lengths"*. **`3
+`과 `4
+`은 둘 다 2바이트**이므로 길이 검증은 틀린 값을 통과시킨다.
+기계 검증은 전부 녹색(`status=succeeded`, `exit_code=0`, evidence 존재)이었고 `tests_passed: 4`로 제출됐다.
+OA가 `validate --record --decision rejected`로 거부했다.
+
+> `exit_code=0`만으로 승인하지 않는 규율의 실증 사례다. 기계 체크만 봤다면 통과했을 결과다.
+> 같은 형태를 Grok(ack1)·Qwen(ack2)은 통과했으므로, probe가 런타임을 실제로 변별한다.
+
+**ack4 통과.** 실패 지점을 지목해 재발행했다 — criteria를 5개로 바꿔 직전 값 재사용을 막고,
+*"파일 개수로 추론하지 말고 배열을 열거하라"*, *"길이가 아니라 전체 바이트 시퀀스를 비교하라"*를 명시하고,
+evidence에 `criteria_counted` 필드를 요구했다. 결과는 3파일 전부 byte-exact,
+`criteria_counted={count:5, determined_by:"Enumerated the completion_criteria array…"}`,
+검증 방법도 *"compared full byte sequence against intended content"*로 바뀌었다.
+
+**해석**: 무작위 실수가 아니라 **읽는 대신 추론하고, 요구된 것보다 약한 속성을 검증하는 경향**이며,
+명시적 지시로 교정 가능하다. 다만 교정은 OA가 제공했지 LWAR의 자체 성실성에서 나오지 않았다.
+→ 태스크 작성 시 **검증할 속성(바이트 시퀀스 vs 길이)을 criteria에 명시**하는 것이 유효한 방어다.
+
+### 17.2 `drain` → `pao-resume` → `on` 왕복 — D38 실증
+
+| 시각(UTC) | 사건 |
+|---|---|
+| 04:36:33 | OA `control --command drain` |
+| 04:37:05 | LWAR2가 `state draining` 요청 (**32초**) |
+| — | OA `reconcile` → `draining` (registry 19) |
+| 04:37:19 | OA `control --command ping --reason "pao-resume: …"` |
+| 04:37:35 | LWAR2가 **`state on` 요청** (**16초**) |
+| — | OA `reconcile` → `on` (registry 20) |
+| 04:37:53 | `runtime_status=active` 복귀 |
+
+lifecycle response 2건이 `on → draining`, `draining → on`으로 각각 `accepted`.
+**왕복 총 ~80초.** §16에서 스키마 변경 없이 설계한 규약이 실제 런타임에서 동작했다.
+
+이로써 P6 LifecycleGraphFix에서 표로 추가한 **복귀 간선(`draining → on`)** 도 실증됐다.
+
+### 17.3 v1.18 검증 상태
+
+| 계약 | 상태 |
+|---|---|
+| exit-notify 배달·재시작 규율 | ✅ 3개 벤더 |
+| 50분(3000s) 슬라이스 | ✅ LWAR3, 31슬라이스 25시간 |
+| 축소 slice_s (540) | ✅ LWAR1(Qwen), 551초 측정 |
+| 상한 > 슬라이스 시 기본값 유지 | ✅ LWAR2(Kimi), 3000 |
+| 이종 벤더 다중 LWAR | ✅ alibaba / moonshot / xai |
+| 슬롯 회수 → 재사용(generation+1) | ✅ LWAR1·LWAR2 각각 |
+| cancel — 미claim(tombstone) | ✅ 6초 |
+| cancel — 실행 중 | ✅ **중단 불가**임을 실증, 문서 정정 |
+| `drain` → `pao-resume` → `on` | ✅ 80초 |
+| adherence probe 변별력 | ✅ 3통과 / 1실패 후 교정 |
+
+**미검증으로 남은 계약 없음.** `ProbeScriptUpgrade`(설계상 유일한 `designing` 노드)만 의도적으로 보류 중이다.
