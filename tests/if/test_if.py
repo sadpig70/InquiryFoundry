@@ -13,7 +13,15 @@ import sys
 sys.path.insert(0, str(CORE))
 
 from if_core.allocate import build_allocation, vendor_family
-from if_core.bus import assert_visible, ensure_jail, make_pao_task, phase_of
+from if_core.bus import (
+    assert_visible,
+    ensure_jail,
+    lwar_script,
+    make_pao_task,
+    oa_script,
+    phase_of,
+    publish_collect,
+)
 from if_core.const import OPERATORS
 from if_core.cycle import close_run, inquiry_cycle, mint_anon, reject_excluded
 from if_core.gates import mechanical_gates, source_in_hints
@@ -190,6 +198,61 @@ def test_exclusion_names_every_offender():
     message = str(err.value)
     assert "LWAR1" in message and "LWAR3" in message
     assert "LWAR2" not in message
+
+
+def test_bus_resolves_sibling_skill_scripts():
+    """oa_script/lwar_script used parents[3], which is `.agents`, so every --pao
+    publish invoked a path that does not exist and died on the first send. The
+    scripts must resolve against the skills root that holds if-core itself."""
+    for script, name in ((oa_script(), "oa.py"), (lwar_script(), "lwar.py")):
+        assert script.name == name
+        assert script.is_file(), f"{script} does not exist"
+        # Same root as if-core, not one level above it.
+        assert script.parents[2].name == "skills"
+
+
+def test_publish_collect_reads_status_from_the_result_body(tmp_path):
+    """`oa collect` nests the ResultContract under "result". publish_collect read
+    the status off the envelope instead, so every collected result parsed as ""
+    and healthy runs were reported timed_out while their output sat in outgoing.
+    """
+    run_dir = tmp_path / "runs" / "RUN-20260818-shape"
+    (run_dir / "pao_drafts").mkdir(parents=True)
+    jail = ensure_jail(run_dir, "LWAR1")
+    (jail / "outbox").mkdir(exist_ok=True)
+    (jail / "outbox" / "generate-r0.yaml").write_text(
+        "- local_id: LWAR1-01" + chr(10) + "  question: q" + chr(10),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def runner(argv):
+        calls.append(argv[0])
+        if argv[0] == "send":
+            return {"event": "task_published"}
+        return {
+            "event": "results_collected",
+            "count": 1,
+            "results": [
+                {
+                    "lwar_id": "LWAR1",
+                    "result_file": "x.json",
+                    # The shape oa actually emits.
+                    "result": {"task_id": "t", "status": "succeeded"},
+                }
+            ],
+        }
+
+    accepted, statuses = publish_collect(
+        run_dir, "generate", [("LWAR1", {"role": "generate"})], 60,
+        poll_s=0.01, runner=runner,
+    )
+
+    assert statuses == ["succeeded"], statuses
+    assert "timed_out" not in statuses
+    assert "LWAR1" in accepted
+    assert "recover" not in calls
 
 
 def test_phase_of_and_task_id():

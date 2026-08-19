@@ -97,7 +97,7 @@ def assert_visible(lwar_id: str, role: str, opened_path: str, jail: Path) -> Non
 
 
 def trusted_code_roots() -> list[str]:
-    skills = Path(__file__).resolve().parents[2]
+    skills = _skills_root()
     return [str(skills / "if-lwar"), str(skills / "if-core")]
 
 
@@ -108,7 +108,7 @@ def make_pao_task(run_id: str, role: str, lwar: str, jail: Path,
         raise ValueError(role)
     data_read = [str(jail)] if role == "generate" else [str(jail / "inbox")]
     timeout = {"generate": 900, "contrarian": 900, "judge": 600}[role]
-    dispatcher = Path(__file__).resolve().parents[2] / "if-lwar" / "scripts" / "if_lwar.py"
+    dispatcher = _skills_root() / "if-lwar" / "scripts" / "if_lwar.py"
     if stub:
         run_line = (
             f"python {dispatcher} --stub --role {role} --lwar-id {lwar} "
@@ -211,7 +211,18 @@ def publish_collect(run_dir: Path, role: str, items: list, timeout_s: int,
             lid = res.get("lwar_id")
             if lid not in pending:
                 continue
-            st = res.get("status") or res.get("result_status") or ""
+            # `oa collect` nests the ResultContract under "result"; the status
+            # lives there, not on the envelope. Reading it off the envelope
+            # yielded "" for every collected result, so nothing ever matched
+            # `succeeded`, pending never drained, and healthy runs that had
+            # already submitted were reported as timed_out.
+            body = res.get("result") or {}
+            st = (
+                body.get("status")
+                or res.get("status")
+                or res.get("result_status")
+                or ""
+            )
             observed.append(st)
             if st in OMIT_STATUS or st == "failed":
                 pending.pop(lid, None)
@@ -245,9 +256,21 @@ def cancelled_task_ids(pao_root: Path, lwar_id: str) -> list[str]:
     return sorted(p.stem for p in folder.glob("*.json"))
 
 
+def _skills_root() -> Path:
+    """The directory holding the sibling skills (if-core, pao-oa, pao-lwar, ...).
+
+    if_core/bus.py lives at <skills>/if-core/if_core/bus.py, so the skills root
+    is parents[2]. It was parents[3] here, which resolved to `.agents` and put
+    `.agents/pao-oa/scripts/oa.py` on the command line — a path that does not
+    exist, so every --pao publish died on the first send. The two other places
+    in this file that need the same root already used parents[2].
+    """
+    return Path(__file__).resolve().parents[2]
+
+
 def oa_script() -> Path:
-    return Path(__file__).resolve().parents[3] / "pao-oa" / "scripts" / "oa.py"
+    return _skills_root() / "pao-oa" / "scripts" / "oa.py"
 
 
 def lwar_script() -> Path:
-    return Path(__file__).resolve().parents[3] / "pao-lwar" / "scripts" / "lwar.py"
+    return _skills_root() / "pao-lwar" / "scripts" / "lwar.py"

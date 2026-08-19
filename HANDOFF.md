@@ -134,15 +134,37 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 
 ---
 
-## 7. 라이브 IF 런 (변화 없음)
+## 7. 라이브 IF 런
 
 | Run | 상태 |
 |---|---|
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
+| `RUN-20260818-live3c` | **성공** (2026-08-18, 8분). `--pao` 정규 경로 최초 완주. seed 9 / qo 9 / **scored 9** / rejected 0, `protocol_valid=true`, `hypothesis_valid=true`, `dissent_referenced=true`, `contributing_generate_lwars=3`. human=`awaiting_human` — **`review.yaml` 9건 전부 `decision: pending`, ADOPTED는 인간만** |
+| `RUN-20260818-live3` / `live3b` | 중단됨. 결과·question_id·버스 부작용 0. 아래 버그 2건의 증거로 보존 |
 
 데이터: `.if/runs/…` (git 제외).
 기계 게이트: G-GROUND, G-CLEAR, G-PATH, G-TESTSHAPE. D18–D21 유효.
+
+### `if_cycle.py --pao` 정규 경로는 한 번도 실행된 적이 없었다 (2026-08-18 수정)
+
+live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 스크립트**로 구동됐다.
+그래서 정규 경로에 버그 2개가 그대로 남아 있었고, live3 에서 처음 드러났다.
+
+1. **`bus.py` 경로 off-by-one** — `oa_script()`/`lwar_script()` 가 `parents[3]`(`.agents`)을 써서
+   `.agents/pao-oa/scripts/oa.py` 라는 없는 경로를 호출, 첫 `send` 에서 즉시 사망.
+   스킬 루트는 `parents[2]`(`.agents/skills`)이며 **같은 파일의 다른 두 곳은 이미 맞게 쓰고 있었다.**
+   → `_skills_root()` 로 통일.
+2. **`publish_collect` 의 status 오파싱** — `oa collect` 는 ResultContract 를 `result` 아래에 중첩하는데
+   코드가 봉투에서 `res["status"]` 를 읽어 항상 `""` 가 나왔다. 그래서 `succeeded` 분기에 진입하지 못하고
+   `pending` 이 비지 않아, **3대가 3분 만에 정상 제출했는데도 15분 데드라인까지 기다린 뒤 `timed_out`** 으로 보고했다.
+   `observed_statuses: ['','','','timed_out','timed_out','timed_out']` 의 빈 문자열 3개가 그 증거다.
+   → `res["result"]["status"]` 우선으로 수정(기존 평면 형태도 폴백 유지).
+
+회귀 테스트 2건(`tests/if`): 스크립트 경로 실재 확인, 그리고 **실제 collect 응답 형태를 주입**해 `succeeded` 파싱 검증.
+
+> 교훈: 금지된 우회로만 쓰이면 정규 경로의 결함은 발견되지 않는다. live1/live2 가 "성공"이었던 것이
+> 정규 경로의 건전성을 뜻하지 않았다.
 
 ### Qwen/`alibaba` 배제 — **강제됨** (2026-08-18)
 
