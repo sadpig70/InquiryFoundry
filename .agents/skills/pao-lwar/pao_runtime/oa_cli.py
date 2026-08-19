@@ -1428,7 +1428,28 @@ def command_status(args: argparse.Namespace) -> int:
                 },
             }
         )
-    emit({"event": "oa_status", "registry_version": registry["registry_version"], "lwars": states})
+    # A slot the operator still believes is serving, whose runtime stopped
+    # reporting. Every field below is already in `lwars`; OA kept missing it
+    # because reading it meant scanning each entry by eye. An exit-notify LWAR
+    # goes quiet whenever its session's turn ends, which is expected, so this
+    # is a nudge list for the operator, not an error.
+    needs_operator = [
+        {
+            "lwar_id": s["lwar_id"],
+            "vendor_family": (s["profile"] or {}).get("vendor_family"),
+            "runtime_status": s["runtime_status"],
+            "heartbeat_age_s": s["heartbeat_age_s"],
+        }
+        for s in states
+        if s["state"] == "on" and s["runtime_status"] in {"stale", "registered_not_started"}
+    ]
+    emit({
+        "event": "oa_status",
+        "registry_version": registry["registry_version"],
+        "lwars": states,
+        "needs_operator": needs_operator,
+        "routable_count": sum(1 for s in states if s["runtime_status"] == "active"),
+    })
     return 0
 
 

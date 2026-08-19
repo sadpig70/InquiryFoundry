@@ -58,6 +58,12 @@ end the turn waiting for host stdout-inject unless the probe selected
 live-notify. After an exit-notify watcher exits, handle stdout and restart
 that same script. The operator does not relay OA messages.
 
+If a turn ends before the restart is issued, the ADP pauses — expected, not an
+error. **Restart the watcher as the first action of your next turn**, before
+answering whatever the operator asked, and do **not** re-bootstrap or
+re-register: see "When the turn ends anyway" in
+[references/adp-loop.md](references/adp-loop.md).
+
 The files under this skill folder are the complete operating contract. No
 repository README, external bootstrap guide, plugin, pip package, or vendor-
 specific prompt is required. Environmental prerequisites are limited to the

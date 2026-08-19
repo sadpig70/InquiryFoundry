@@ -56,6 +56,14 @@ python "<PAO_SKILL>/scripts/oa.py" status --startup-deadline 30
   the whole task, and anything longer than `--stale-after` reads as `stale`.
   Check `status` and `current_task_id`, and remember the lease — not the
   heartbeat — is what bounds a lost claim.
+- `status` also reports two aggregates so this does not depend on reading every
+  entry by eye: `routable_count` (entries at `runtime_status=active`) and
+  `needs_operator` (slots that are `state=on` but `stale` or
+  `registered_not_started`, with `vendor_family` and `heartbeat_age_s`).
+  **Check them before proposing work that needs a quorum.** An exit-notify LWAR
+  goes quiet whenever its session's turn ends — expected, and from the bus side
+  indistinguishable from a closed session. OA cannot restart it and must not
+  try; name the runtime and ask the operator to nudge it.
 - Missing, corrupt, identity-mismatched, `starting`, or stale heartbeats are
   excluded from `send --auto`; use explicit `--lwar-id` only when the operator
   intentionally overrides routing health.

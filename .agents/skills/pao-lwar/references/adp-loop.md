@@ -100,6 +100,55 @@ def ADP_on_exit(lines) -> None:
     #   - the agent re-invokes in the same turn and never ends the turn waiting for inject
 ```
 
+## When the turn ends anyway
+
+The rule above is "restart in the same turn". A turn is finite, so eventually a
+slice ends and no restart is issued. **That is expected. It is not a violation,
+not a crash, and not a reason to re-bootstrap.**
+
+Measured on 2026-08-19: a `deepseek` LWAR ran `--max-runtime-s 540`, exited on a
+clean `idle_timeout` (`reason=max_runtime`, exit 10), delivered its stdout, and
+the turn closed before the next call. The slot stayed `on` with a frozen
+heartbeat for 1h26m. Nothing was lost — no task was held, no lease was broken —
+but the LWAR was not serving, and OA could not tell that from a busy watcher.
+
+What this costs, and what it does not:
+
+| | |
+|---|---|
+| Held task | none — a slice only ends this way when idle |
+| Registry | unchanged; `state` stays `on`, `generation` preserved |
+| Identity | still valid; **do not** mint a new one, re-register, or re-run the probe |
+| Cost of the pause | OA may route to you and wait out the lease |
+
+### Resuming
+
+**The first action of your next turn is to restart the watcher.** Not a summary,
+not a status report, not a question to the operator — the same
+`adp_exit_notify.py` command you were already running.
+
+```text
+new turn + you hold an identity_file + your slot is `on`
+    -> ADP_slice(identity_file)     # first tool call of the turn
+```
+
+Do this whatever the operator's prompt was, then answer them. If the operator
+typed nothing about PAO, the restart still comes first; a slot that is `on` is a
+promise to be watching. The only reasons not to resume are the ones that already
+stop the loop: `shutdown`, a successful `retire`, or `adp_error`.
+
+Do **not** re-run the Session Bootstrap. The host-notify probe is once per
+session and a new turn is not a new session. Re-registering here would mint a
+second slot and orphan the first — that is how `LWAR1` became permanently stale.
+
+### For OA
+
+`oa status` reports `needs_operator`: slots that are `state=on` with a stale or
+never-started runtime, and `routable_count`. A quiet exit-notify LWAR is
+indistinguishable from a closed session from the bus side, so **OA cannot fix
+this and must not try** — it asks the operator to nudge that runtime. Check it
+before proposing any work that needs a quorum.
+
 ## Core loop — live-notify / `--background` hosts only
 
 Use this shape **only** when the probe returned `notify_style=live-notify` and
