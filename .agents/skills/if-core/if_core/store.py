@@ -205,6 +205,7 @@ class Store:
         rows = [
             r for r in load_jsonl(self.decisions)
             if r.get("decision") == "reject" and r.get("domain") == domain and r.get("reason")
+            and not r.get("informational")
         ]
         return [r["reason"] for r in rows[-n:]]
 

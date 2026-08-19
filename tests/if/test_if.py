@@ -518,3 +518,22 @@ def test_if_oa_allows_validate():
     text = oa.read_text(encoding="utf-8")
     assert "validate" in text
     assert "control" in text
+
+
+def test_informational_reasons_never_become_avoid_patterns(tmp_path):
+    """close_review writes an informational entry as decision="reject" so the
+    count is auditable, but informational means "kept as a record", not "the
+    idea was wrong". query_avoid_patterns filtered on decision alone, so the
+    next run of the same domain was told to avoid what it was meant to keep."""
+    st = Store(tmp_path)
+    st.record_decision({
+        "question_id": "Q-1", "decision": "reject", "domain": "scaling",
+        "reason": "genuine defect in the premise", "run_id": "R-1",
+        "informational": False,
+    })
+    st.record_decision({
+        "question_id": "Q-2", "decision": "reject", "domain": "scaling",
+        "reason": "kept for the record, not a rejection", "run_id": "R-1",
+        "informational": True,
+    })
+    assert st.query_avoid_patterns("scaling") == ["genuine defect in the premise"]
