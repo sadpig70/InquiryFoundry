@@ -1,3 +1,5 @@
+![Inquiry Foundry](assets/InquiryFoundry-hero.png)
+
 # InquiryFoundry
 
 다종 AI 런타임이 서로 다른 지식·관점·반론을 교차시켜, **검증 가능하고 행동 가능한 질문(Question Object)** 포트폴리오를 만드는 Inquiry Intelligence System.

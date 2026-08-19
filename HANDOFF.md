@@ -140,11 +140,24 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 |---|---|
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
-| `RUN-20260818-live3c` | **성공** (2026-08-18, 8분). `--pao` 정규 경로 최초 완주. seed 9 / qo 9 / **scored 9** / rejected 0, `protocol_valid=true`, `hypothesis_valid=true`, `dissent_referenced=true`, `contributing_generate_lwars=3`. human=`awaiting_human` — **`review.yaml` 9건 전부 `decision: pending`, ADOPTED는 인간만** |
+| `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
 | `RUN-20260818-live3` / `live3b` | 중단됨. 결과·question_id·버스 부작용 0. 아래 버그 2건의 증거로 보존 |
 
 데이터: `.if/runs/…` (git 제외).
 기계 게이트: G-GROUND, G-CLEAR, G-PATH, G-TESTSHAPE. D18–D21 유효.
+
+### `close` 경로와 `informational` 의 실제 의미 (2026-08-19)
+
+`if_cycle.py close --run <RUN_ID>` 도 이번이 최초 실행이다(플래그는 `--run`, `--run-id` 아님).
+
+- **`informational` 은 독립 판정이 아니다.** `close_review` 는 `informational: true` 항목을
+  `decision: reject` + `informational: True` 로 **decisions 로그에만** 기록하고,
+  질문의 `status` 는 전이시키지 않는다(`SCORED` 유지). 운영자 판정 INFORMATIONAL 1건은 그래서
+  `report.decided.reject` 에 합산되어 **adopt 4 / reject 5** 로 집계된다 — 운영자 표의 `REJECT 4` 와 수가 다른 것은 이 때문이며 오류가 아니다.
+- `preflight_close` 게이트: `reviewer` 필수, `decision=pending` 또는 빈 `reason` 금지,
+  그리고 **`wound`/`kill` 을 받은 질문은 전부 `dissent_portfolio` 에 등재돼 있어야** 한다(`dissent_not_referenced`).
+- `query_avoid_patterns` 가 `reject` 사유를 도메인별로 읽어 **다음 런의 `avoid_patterns` 로 되먹인다.**
+  따라서 `reason` 은 사후 감사용 메모가 아니라 다음 런의 입력이다.
 
 ### `if_cycle.py --pao` 정규 경로는 한 번도 실행된 적이 없었다 (2026-08-18 수정)
 
