@@ -1433,13 +1433,22 @@ def command_status(args: argparse.Namespace) -> int:
     # because reading it meant scanning each entry by eye. An exit-notify LWAR
     # goes quiet whenever its session's turn ends, which is expected, so this
     # is a nudge list for the operator, not an error.
+    def _holds_claim(state: dict) -> bool:
+        heartbeat = state["heartbeat"] or {}
+        return (heartbeat.get("status") == "running"
+                and heartbeat.get("current_task_id") is not None)
+
     def _busy(state: dict) -> bool:
         # An exit-notify watcher exits to hand the task over, so nothing writes a
         # heartbeat while the agent executes. The slot reads `stale` for the whole
         # task and is perfectly healthy. Same fence as expire_pending_control.
-        heartbeat = state["heartbeat"] or {}
-        return (heartbeat.get("status") == "running"
-                and heartbeat.get("current_task_id") is not None)
+        #
+        # Bounded, though: a claim lease is max(default, task timeout + margin),
+        # so a heartbeat frozen far past that is a stranded claim, not work in
+        # progress. RUN-20260819-live5 lost two of three runtimes that way and
+        # an unbounded fence hid both.
+        age = state["heartbeat_age_s"]
+        return _holds_claim(state) and (age is None or age <= args.busy_grace)
 
     needs_operator = [
         {
@@ -1447,10 +1456,12 @@ def command_status(args: argparse.Namespace) -> int:
             "vendor_family": (s["profile"] or {}).get("vendor_family"),
             "runtime_status": s["runtime_status"],
             "heartbeat_age_s": s["heartbeat_age_s"],
+            "held_task_id": (s["heartbeat"] or {}).get("current_task_id"),
         }
         for s in states
         if s["state"] == "on"
-        and s["runtime_status"] in {"stale", "registered_not_started"}
+        and (s["runtime_status"] in {"stale", "registered_not_started"}
+             or _holds_claim(s))
         and not _busy(s)
     ]
     emit({
@@ -2114,6 +2125,10 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--root", default=None)
     status.add_argument("--stale-after", type=float, default=STALE_AFTER_S_DEFAULT)
     status.add_argument("--startup-deadline", type=float, default=STARTUP_DEADLINE_S_DEFAULT)
+    # How long a frozen `running` heartbeat still counts as work in progress.
+    # A claim lease is max(default, task timeout + margin); 1800s clears the
+    # 900s IF tasks with room and still catches a stranded claim in one slice.
+    status.add_argument("--busy-grace", type=float, default=1800.0)
     status.set_defaults(handler=command_status)
 
     dead = subparsers.add_parser("dead")

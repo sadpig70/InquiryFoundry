@@ -155,3 +155,30 @@ def test_stale_without_a_held_task_is_still_a_nudge(tmp_path):
     report = _status(tmp_path)
     assert [x["lwar_id"] for x in report["needs_operator"]] == ["LWAR1"]
     assert report["busy_count"] == 0
+
+
+def test_a_claim_frozen_past_the_grace_is_stranded_not_busy(tmp_path):
+    """The busy fence had no upper bound, so a runtime that went silent while
+    holding a claim stayed invisible. RUN-20260819-live5 lost two of three
+    runtimes exactly that way and the aggregate reported a healthy roster. A
+    claim lease is max(default, task timeout + margin), so a `running` heartbeat
+    frozen far past that is stranded work, and the operator has to know."""
+    _seed(tmp_path, {"LWAR1": {"state": "on", "vendor_family": "moonshot", "age_s": 5.0}})
+    _set_busy(tmp_path, "LWAR1", "task-if-RUN-1-generate-LWAR1-r0", age_s=2600.0)
+    report = _status(tmp_path)
+    assert report["busy_count"] == 0
+    assert [x["lwar_id"] for x in report["needs_operator"]] == ["LWAR1"]
+    assert report["needs_operator"][0]["held_task_id"] == "task-if-RUN-1-generate-LWAR1-r0"
+
+
+def test_the_grace_boundary_is_configurable(tmp_path):
+    """Same slot, either side of --busy-grace."""
+    _seed(tmp_path, {"LWAR1": {"state": "on", "vendor_family": "xai", "age_s": 5.0}})
+    _set_busy(tmp_path, "LWAR1", "task-if-RUN-1-judge-LWAR1-r0", age_s=600.0)
+    proc = subprocess.run(
+        [sys.executable, str(OA), "status", "--root", str(tmp_path), "--busy-grace", "300"],
+        capture_output=True, text=True, check=True,
+    )
+    tight = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert [x["lwar_id"] for x in tight["needs_operator"]] == ["LWAR1"]
+    assert _status(tmp_path)["needs_operator"] == []   # default 1800s: still busy
