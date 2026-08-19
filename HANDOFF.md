@@ -47,19 +47,26 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 ## 3. 버스 / 등록 (지금)
 
 - Bus: `D:\InquiryFoundry\.pao`
-- `registry_version`: **20**
-- 슬롯 **3개**. 이종 벤더 3종이 같은 계약 아래 등록돼 있다 — **함부로 은퇴시키지 말 것.**
+- `registry_version`: **33**
+- 슬롯 **0개**. 2026-08-19에 로스터를 통째로 비웠다.
 
-| 슬롯 | gen | profile | slice | 상태 |
-|---|---:|---|---:|---|
-| LWAR1 | 3 | Qwen Code / `qwen_code` / `alibaba` / agent | **540s** | **stale** (2026-08-18 크래시로 watcher 소멸). identity 유효 → 세션 재기동 시 RESUME. evidence가 가장 두꺼운 슬롯 |
-| LWAR2 | 3 | Kimi Code CLI / `kimi_cli` / `moonshot` / **cli** | 3000s | **stale** (크래시). identity 유효. adherence probe 1회 실패 후 **3연속 통과** (§5) |
-| LWAR3 | 2 | Grok Build TUI / `grok_build` / `xai` / agent | 3000s | **stale** (크래시). identity 유효. 40+슬라이스 무중단 이력. cwd에 헬퍼 파일을 남기는 성향 |
+| 슬롯 | 처분 | 사유 |
+|---|---|---|
+| LWAR6 (xai) | `deregistered` — LWAR 주도 정규 은퇴 | Grok이 해지 요청. `on→draining→off→deregistered` 를 OA가 `reconcile` 로 단계 승인 |
+| LWAR1 (alibaba) | `retire-stale` | 28시간 고아. IF 배제 대상이라 되살려도 못 쓴다 |
+| LWAR5 (moonshot) | `retire-stale --abandoned-task-id` | 크레딧 소진 |
+| LWAR4 (deepseek) | `retire-stale --abandoned-task-id` | 운영자가 세션 종료 |
 
-  instance_id — LWAR1 `…b9518c13…` / LWAR2 `…50630f48…` / LWAR3 `…dbaa67bc…` (회수 명령에 정확한 튜플 필요)
+  LWAR4·LWAR5 는 **claim을 쥔 채 죽어** heartbeat가 `running` 으로 얼어붙은 상태였다.
+  일반 `--retire-stale` 은 `heartbeat_not_idle` 로 영구 거부한다 — §7.6 참조.
 
-  **LWAR1의 `vendor_family=alibaba`**: §7의 IF 런 배제 대상이다. PAO 등록·일반 태스크는 정상 (실제로 `--auto`가 LWAR1에 배정한 태스크가 통과했다). **IF 런에만 배제가 걸리며, 이제 `cycle.reject_excluded()` 가 코드로 강제한다 — §7 참조. 현 로스터로는 `normal` 모드 IF 런이 불가능하다.**
-- 슬롯 이력: LWAR1·LWAR2 는 한 번씩 회수(`retire-stale` / `reclaim-unadopted`)된 뒤 **새 벤더가 generation 3 으로 재사용**한 자리다. 현재 tombstone 은 `LWAR4 gen1` 하나뿐.
+- **앞으로의 로스터: Codex / Antigravity / Grok.** 셋 다 `EXCLUDE_FAMILIES={alibaba}`,
+  `EXCLUDE_ADAPTERS={qwen}` 에 걸리지 않고 `vendor_family` 도 3종이라 `normal` 모드의
+  "2종 이상" 요건을 만족한다. `vendor_family`/`adapter_id` 는 스키마 enum이 아니라
+  **LWAR이 등록 시 자기 신고**하는 자유 문자열이므로, 등록 후 `status` 로 실제 신고값을
+  확인하고 배제 정책과 대조할 것.
+- 슬롯 배정은 `lowest_available`. tombstone 의 `reusable_after` 가 지난 번호부터 재사용되므로
+  새 런타임은 LWAR1 부터 순서대로 받는다.
 - audit `healthy`, degraded/pending 0.
 
 다음 OA: 새 `PAO_OA_ID` mint → `doctor --role oa` → `presence` → `reconcile` → `status`.
@@ -337,15 +344,44 @@ python .agents/skills/pao-oa/scripts/pao.py doctor --role oa --clear-leftover-tm
 
 ---
 
+## 7.6 claim을 쥔 채 죽은 런타임의 슬롯 (2026-08-19)
+
+런타임이 태스크를 claim한 상태로 사라지면 heartbeat가 `running` +
+`current_task_id` 로 얼어붙는다. `retire_stale` 은 이를 `heartbeat_not_idle` 로
+거부하는데, **그 상태를 풀 방법이 원래 없었다.** 런타임이 죽었으니 스스로
+`retire` 할 수 없고, `--reap-startup`(starting 전용)도
+`--reclaim-unadopted`(미채택 전용)도 해당하지 않는다. claim이 이미 dead-letter 되고
+메일박스 6개 큐가 전부 비어도 슬롯은 영구히 묶인다.
+
+R1(미채택 슬롯)·R2(미수령 control)와 같은 형태다 — 흔한 경우엔 옳은 관문인데
+실제로 발생하는 상태에 탈출구가 없는 것. 같은 방식으로 고쳤다(커밋 `c865d69`):
+기본 관문은 그대로 두고 **별도 펜스를 가진 명시적 경로**를 추가했다.
+
+```bash
+oa.py recover --retire-stale --lwar-id LWAR5   --instance-id INSTANCE_ID --generation GENERATION   --expected-last-seen TIMESTAMP --stale-after 120   --abandoned-task-id TASK_ID --reason "..."
+```
+
+- `--abandoned-task-id` 는 **heartbeat가 가리키는 바로 그 태스크 id**여야 한다.
+  틀린 id는 플래그를 안 준 것과 똑같이 `heartbeat_not_idle` 로 거부된다.
+- 일반 `active_mailbox_work` 검사는 그대로 남는다. 진짜 실행 중인 런타임은
+  `claimed` 항목과 살아 있는 lease를 갖고 있으므로 `active_mailbox_work` 로 거부된다.
+- 묘비에 `retirement_mode: stale_abandoned_claim_reap` 과 `abandoned_task_id` 가 남는다.
+
+**선행 조건 — `collect --archive` 를 먼저 돌려야 한다.** IF 사이클은 `collect` 를
+`--archive` 없이 호출하므로 배달 완료된 결과가 `outgoing/` 에 쌓이고,
+`_active_mailbox_work` 가 이를 활성 작업으로 세어 은퇴를 막는다. 결함이 아니라 설계다.
+
+---
+
 ## 8. 다음 작업 (우선순위)
 
-1. **live4b 인간 리뷰** — 9건. 자료는 `_workspace/if-live4/review-brief.md`. 기계 금지.
-   닫아야 `decisions.jsonl` 이 갱신되고 live5가 의미를 가진다.
-2. **live5(3회차 `scaling`)** — `avoid_patterns` 전량 배포(`61986b7`)가 재발을 막는지 확인.
-   Q-0004(1000배 스케일)·Q-0005(통계역학 수입) 계열이 사라지면 진단 확증, 남으면 처방을 바꿔야 한다.
-3. **LWAR1(alibaba) 슬롯 처분** — stale·영구 고아. `recover --retire-stale` 권고했으나 판단 미수령.
-4. live2 `review.yaml` 인간 adopt — 기계 금지.
-5. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
+1. **새 로스터 등록 대기** — Codex / Antigravity / Grok. OA는 LWAR를 띄울 수 없다.
+   등록되면 `reconcile` → `status` 로 신고된 `vendor_family`/`adapter_id` 를 배제 정책과 대조할 것.
+2. **live5b(3회차 `scaling`)** — 브리프는 `_workspace/if-live5/brief-5b.yaml` 로 준비돼 있다.
+   `avoid_patterns` 전량 배포(`61986b7`)가 재발을 막는지 확인한다. 교란 요인은 위 절 참조.
+   런 중 감시는 `--busy-grace 960`.
+3. live2 `review.yaml` 인간 adopt — 기계 금지.
+4. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
 
 OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금지.
 
