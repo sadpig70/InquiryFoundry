@@ -945,6 +945,7 @@ def command_recover(args: argparse.Namespace) -> int:
             args.expected_last_seen,
             stale_after,
             args.reason,
+            abandoned_task_id=args.abandoned_task_id,
         )
         audit_operation = (
             f"stale-retire:{args.lwar_id}:{args.instance_id}:{args.generation}:"
@@ -2111,6 +2112,11 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("--stale-after", type=float)
     recover.add_argument("--unadopted-after", type=float)
     recover.add_argument("--control-older-than", type=float)
+    # --retire-stale only: the exact task a dead runtime's heartbeat still names.
+    # A frozen `running` heartbeat otherwise pins the slot forever; naming the
+    # task is the operator's statement that this claim was abandoned, and every
+    # mailbox queue must still be empty for the retirement to go through.
+    recover.add_argument("--abandoned-task-id")
     recover.add_argument("--reason")
     recover.add_argument(
         "--delivery-timeout",

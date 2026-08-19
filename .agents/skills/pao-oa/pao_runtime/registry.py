@@ -93,8 +93,20 @@ class RegistryService:
         stale_after_s: float,
         reason: str,
         now: datetime | None = None,
+        abandoned_task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Retire one exact stale, idle identity with tombstone-first fencing."""
+        """Retire one exact stale, idle identity with tombstone-first fencing.
+
+        A runtime that dies holding a claim leaves a heartbeat frozen at
+        ``running``, and the idle fence then refuses the slot forever even after
+        the claim itself is gone from the bus. ``abandoned_task_id`` is the
+        narrow way out: the operator names the task they believe was abandoned,
+        it must be exactly the one the heartbeat still points at, and every
+        mailbox queue must already be empty — a runtime that were really
+        executing would hold a ``claimed`` entry and a live lease. Naming the
+        task is what keeps this from happening by accident, and it is recorded
+        on the tombstone.
+        """
         lwar_id = validate_lwar_id(lwar_id)
         instance_id = validate_instance_id(instance_id)
         if generation <= 0:
@@ -123,7 +135,10 @@ class RegistryService:
                     tombstone
                     and tombstone.get("instance_id") == instance_id
                     and tombstone.get("last_generation") == generation
-                    and tombstone.get("retirement_mode") == "stale_idle_reap"
+                    and tombstone.get("retirement_mode") in {
+                        "stale_idle_reap", "stale_abandoned_claim_reap"
+                    }
+                    and tombstone.get("abandoned_task_id") == abandoned_task_id
                     and tombstone.get("expected_last_seen") == expected_last_seen
                     and tombstone.get("retirement_reason") == reason
                     and tombstone.get("stale_after_s") == stale_after_s
@@ -164,6 +179,12 @@ class RegistryService:
                     validate_contract(heartbeat, "heartbeat.schema.json")
             except ValueError:
                 heartbeat = None
+            held_task_id = (heartbeat or {}).get("current_task_id")
+            abandon_ok = bool(
+                abandoned_task_id is not None
+                and held_task_id is not None
+                and held_task_id == abandoned_task_id
+            )
             if heartbeat is None:
                 rejection = "heartbeat_missing_or_invalid"
                 age_s = None
@@ -179,7 +200,10 @@ class RegistryService:
             elif heartbeat.get("status") == "starting":
                 rejection = "heartbeat_starting"
                 age_s = None
-            elif heartbeat.get("status") == "running" or heartbeat.get("current_task_id") is not None:
+            elif (
+                heartbeat.get("status") == "running"
+                or heartbeat.get("current_task_id") is not None
+            ) and not abandon_ok:
                 rejection = "heartbeat_not_idle"
                 age_s = None
             elif heartbeat.get("status") not in {
@@ -189,7 +213,7 @@ class RegistryService:
                 "draining",
                 "off",
                 "control",
-            }:
+            } and not abandon_ok:
                 rejection = "heartbeat_state_not_retirable"
                 age_s = None
             else:
@@ -235,7 +259,8 @@ class RegistryService:
                 "instance_id": instance_id,
                 "deregistered_at": utc_now(),
                 "reusable_after": reusable_after.isoformat().replace("+00:00", "Z"),
-                "retirement_mode": "stale_idle_reap",
+                "retirement_mode": "stale_abandoned_claim_reap" if abandon_ok else "stale_idle_reap",
+                "abandoned_task_id": held_task_id if abandon_ok else None,
                 "retirement_reason": reason,
                 "expected_last_seen": expected_last_seen,
                 "stale_after_s": stale_after_s,

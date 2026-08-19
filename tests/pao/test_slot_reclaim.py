@@ -314,3 +314,59 @@ def test_expire_pending_control_refuses_identity_mismatch(tmp_path):
     assert outcome["accepted"] is False
     assert outcome["reason"] == "identity_mismatch"
     assert len(list((tmp_path / "mailbox" / "LWAR1" / "control").glob("*.json"))) == 1
+
+
+def test_abandoned_claim_retire_needs_the_exact_task_named(tmp_path):
+    """A runtime that dies holding a claim freezes its heartbeat at `running`,
+    and the idle fence then pins the slot forever — even once the claim itself
+    has been dead-lettered and every queue is empty. LWAR5 sat like that on
+    2026-08-19 after moonshot ran out of credits, and no fenced path could
+    retire it. Naming the task is the escape, and naming the wrong one is not.
+    """
+    _seed_registry(tmp_path)
+    _write_heartbeat(tmp_path, "LWAR1", instance_id=INST, generation=2,
+                     status="running", age_s=17000.0)
+    observed = json.loads((tmp_path / "mailbox" / "LWAR1" / "heartbeat.json").read_text())
+    held = "task-if-RUN-1-generate-LWAR1-r0"
+    heartbeat = dict(observed)
+    heartbeat["current_task_id"] = held
+    atomic_write_json(tmp_path / "mailbox" / "LWAR1" / "heartbeat.json", heartbeat)
+    service = RegistryService(tmp_path)
+    args = ("LWAR1", INST, 2, observed["last_seen"], 120.0, "credits exhausted")
+
+    assert service.retire_stale(*args)["reason"] == "heartbeat_not_idle"
+    wrong = service.retire_stale(*args, abandoned_task_id="task-if-RUN-1-judge-LWAR1-r0")
+    assert wrong["accepted"] is False
+    assert wrong["reason"] == "heartbeat_not_idle"
+
+    ok = service.retire_stale(*args, abandoned_task_id=held)
+    assert ok["accepted"] is True
+    tomb = service.load_tombstones()["entries"]["LWAR1"]
+    assert tomb["retirement_mode"] == "stale_abandoned_claim_reap"
+    assert tomb["abandoned_task_id"] == held
+    # Idempotent replay of the exact command.
+    assert service.retire_stale(*args, abandoned_task_id=held)["reason"] == "already_retired"
+
+
+def test_abandoned_claim_retire_still_refuses_a_live_queue(tmp_path):
+    """The named task is the operator's belief; the mailbox is the evidence. A
+    runtime that were really executing would hold a claim and a live lease."""
+    _seed_registry(tmp_path)
+    _write_heartbeat(tmp_path, "LWAR1", instance_id=INST, generation=2,
+                     status="running", age_s=17000.0)
+    observed = json.loads((tmp_path / "mailbox" / "LWAR1" / "heartbeat.json").read_text())
+    held = "task-if-RUN-1-generate-LWAR1-r0"
+    heartbeat = dict(observed)
+    heartbeat["current_task_id"] = held
+    atomic_write_json(tmp_path / "mailbox" / "LWAR1" / "heartbeat.json", heartbeat)
+    atomic_write_json(tmp_path / "mailbox" / "LWAR1" / "claimed" / f"{held}.json",
+                      {"task_id": held})
+    service = RegistryService(tmp_path)
+
+    outcome = service.retire_stale(
+        "LWAR1", INST, 2, observed["last_seen"], 120.0, "credits exhausted",
+        abandoned_task_id=held,
+    )
+    assert outcome["accepted"] is False
+    assert outcome["reason"] == "active_mailbox_work"
+    assert outcome["active_work"] == {"claimed": 1}

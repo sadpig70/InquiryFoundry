@@ -8,6 +8,7 @@ Replace `<PAO_SKILL>` with this skill's folder (SKILL.md §0).
 python "<PAO_SKILL>/scripts/oa.py" recover --delivery-timeout 300
 python "<PAO_SKILL>/scripts/oa.py" recover --reap-startup --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --startup-deadline 30
 python "<PAO_SKILL>/scripts/oa.py" recover --retire-stale --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --expected-last-seen TIMESTAMP --stale-after 120 --reason "replace failed provider generation"
+python "<PAO_SKILL>/scripts/oa.py" recover --retire-stale --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --expected-last-seen TIMESTAMP --stale-after 120 --abandoned-task-id TASK_ID --reason "runtime died holding a claim"
 python "<PAO_SKILL>/scripts/oa.py" recover --reclaim-unadopted --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --unadopted-after 3600 --reason "approved registration never adopted"
 python "<PAO_SKILL>/scripts/oa.py" recover --expire-controls --lwar-id LWAR1 --instance-id INSTANCE_ID --generation GENERATION --control-older-than 600 --reason "control published to a watcher that never returned"
 python "<PAO_SKILL>/scripts/oa.py" dead
@@ -15,6 +16,17 @@ python "<PAO_SKILL>/scripts/oa.py" dead --lwar-id LWAR1 --requeue TASK_ID
 ```
 
 - `recover` returns claimed tasks with expired leases to `incoming`, incrementing `attempt`; when `attempt` exceeds `max_retries`, the task is dead-lettered into `dead/` instead of looping forever. It also dead-letters unclaimed `incoming` deliveries older than `--delivery-timeout`.
+- `recover --retire-stale --abandoned-task-id TASK_ID` is the one way past
+  `heartbeat_not_idle`. A runtime that dies holding a claim leaves its heartbeat
+  frozen at `running`, and the idle fence then pins the slot forever even after
+  the claim has been dead-lettered. The task id you pass must be **exactly** the
+  one the heartbeat still names — a wrong id is rejected as `heartbeat_not_idle`,
+  the same as passing nothing — and every mailbox queue must already be empty, so
+  a runtime that were really executing (it would hold a `claimed` entry and a live
+  lease) is refused as `active_mailbox_work`. Clear delivered results with
+  `collect --archive` first; the IF cycle collects without `--archive`, so they
+  accumulate in `outgoing/` and count as active work. The tombstone records
+  `retirement_mode: stale_abandoned_claim_reap` and the `abandoned_task_id`.
 - `recover --reap-startup` is an explicit, fenced recovery for a matching
   `starting` heartbeat older than the startup deadline. Take all three target
   values from the same current `status` result. The runtime rechecks
