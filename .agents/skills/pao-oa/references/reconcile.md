@@ -59,8 +59,12 @@ python "<PAO_SKILL>/scripts/oa.py" status --startup-deadline 30
 - `status` also reports two aggregates so this does not depend on reading every
   entry by eye: `routable_count` (entries at `runtime_status=active`) and
   `needs_operator` (slots that are `state=on` but `stale` or
-  `registered_not_started`, with `vendor_family` and `heartbeat_age_s`).
-  **Check them before proposing work that needs a quorum.** An exit-notify LWAR
+  `registered_not_started`, with `vendor_family` and `heartbeat_age_s`), plus
+  `busy_count`. `needs_operator` applies the same busy fence as
+  `expire_pending_control`: a slot whose heartbeat is `running` with a
+  `current_task_id` is executing, not gone, and is never listed — the caution two
+  bullets down is why. **Quorum is `routable_count + busy_count`; a busy LWAR is
+  alive but not free. Check this before proposing work that needs a quorum.** An exit-notify LWAR
   goes quiet whenever its session's turn ends — expected, and from the bus side
   indistinguishable from a closed session. OA cannot restart it and must not
   try; name the runtime and ask the operator to nudge it.

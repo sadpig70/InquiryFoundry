@@ -115,3 +115,43 @@ def test_healthy_roster_needs_nobody(tmp_path):
     report = _status(tmp_path)
     assert report["needs_operator"] == []
     assert report["routable_count"] == 3
+
+
+def _set_busy(root: Path, lwar: str, task_id: str, age_s: float) -> None:
+    atomic_write_json(
+        root / "mailbox" / lwar / "heartbeat.json",
+        {
+            "schema_version": "pao.heartbeat.v1",
+            "lwar_id": lwar,
+            "instance_id": INST,
+            "generation": 1,
+            "status": "running",
+            "last_seen": _iso(datetime.now(timezone.utc) - timedelta(seconds=age_s)),
+            "current_task_id": task_id,
+        },
+    )
+
+
+def test_a_busy_exit_notify_watcher_is_not_a_nudge(tmp_path):
+    """The watcher exits to hand the task over, so nothing writes a heartbeat for
+    the whole execution and the slot reads `stale` while perfectly healthy. The
+    first version of this aggregate flagged LWAR5 mid-run on 2026-08-19 for
+    exactly this reason, which is the same fence expire_pending_control needs."""
+    _seed(tmp_path, {
+        "LWAR1": {"state": "on", "vendor_family": "moonshot", "age_s": 5.0},
+        "LWAR2": {"state": "on", "vendor_family": "xai", "age_s": 5.0},
+    })
+    _set_busy(tmp_path, "LWAR1", "task-if-RUN-1-generate-LWAR1-r0", age_s=900.0)
+    report = _status(tmp_path)
+    assert report["needs_operator"] == []
+    assert report["busy_count"] == 1
+    # Busy is alive but not free: quorum is routable + busy, not routable alone.
+    assert report["routable_count"] == 1
+
+
+def test_stale_without_a_held_task_is_still_a_nudge(tmp_path):
+    """`running` alone must not silence the nudge — only running *with a claim*."""
+    _seed(tmp_path, {"LWAR1": {"state": "on", "vendor_family": "deepseek", "age_s": 5000.0}})
+    report = _status(tmp_path)
+    assert [x["lwar_id"] for x in report["needs_operator"]] == ["LWAR1"]
+    assert report["busy_count"] == 0

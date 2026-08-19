@@ -1433,6 +1433,14 @@ def command_status(args: argparse.Namespace) -> int:
     # because reading it meant scanning each entry by eye. An exit-notify LWAR
     # goes quiet whenever its session's turn ends, which is expected, so this
     # is a nudge list for the operator, not an error.
+    def _busy(state: dict) -> bool:
+        # An exit-notify watcher exits to hand the task over, so nothing writes a
+        # heartbeat while the agent executes. The slot reads `stale` for the whole
+        # task and is perfectly healthy. Same fence as expire_pending_control.
+        heartbeat = state["heartbeat"] or {}
+        return (heartbeat.get("status") == "running"
+                and heartbeat.get("current_task_id") is not None)
+
     needs_operator = [
         {
             "lwar_id": s["lwar_id"],
@@ -1441,14 +1449,19 @@ def command_status(args: argparse.Namespace) -> int:
             "heartbeat_age_s": s["heartbeat_age_s"],
         }
         for s in states
-        if s["state"] == "on" and s["runtime_status"] in {"stale", "registered_not_started"}
+        if s["state"] == "on"
+        and s["runtime_status"] in {"stale", "registered_not_started"}
+        and not _busy(s)
     ]
     emit({
         "event": "oa_status",
         "registry_version": registry["registry_version"],
         "lwars": states,
         "needs_operator": needs_operator,
+        # Available right now. A busy LWAR is alive but not free, so quorum is
+        # `routable_count + busy_count`, not `routable_count` alone.
         "routable_count": sum(1 for s in states if s["runtime_status"] == "active"),
+        "busy_count": sum(1 for s in states if s["state"] == "on" and _busy(s)),
     })
     return 0
 
