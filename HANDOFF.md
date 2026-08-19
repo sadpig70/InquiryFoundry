@@ -141,6 +141,8 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260819-live4b` | **완주**, `human=awaiting_human` (2026-08-19). seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, `observed_statuses` 9/9 succeeded. 3사(deepseek/moonshot/xai) + `--pao` 경로 **2회 연속 성공**. 검토 자료 `_workspace/if-live4/review-brief.md` |
+| `RUN-20260819-live4` | 중단됨(`PAO_OA_ID` 미설정으로 첫 `send`에서 fail-closed). 버스 부작용 0. `allocation.yaml` 이 되먹임 도달의 증거라 보존 |
 | `RUN-20260818-live3` / `live3b` | 중단됨. 결과·question_id·버스 부작용 0. 아래 버그 2건의 증거로 보존 |
 
 데이터: `.if/runs/…` (git 제외).
@@ -158,6 +160,36 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
   그리고 **`wound`/`kill` 을 받은 질문은 전부 `dissent_portfolio` 에 등재돼 있어야** 한다(`dissent_not_referenced`).
 - `query_avoid_patterns` 가 `reject` 사유를 도메인별로 읽어 **다음 런의 `avoid_patterns` 로 되먹인다.**
   따라서 `reason` 은 사후 감사용 메모가 아니라 다음 런의 입력이다.
+
+### 되먹임 실증 — RUN-20260819-live4b (2026-08-19)
+
+되먹임이 실제로 작동하는지 같은 `scaling` 도메인으로 2회차를 돌려 측정했다.
+
+**결과: 경로는 작동하고, 배정이 실패했다.**
+
+| 거부된 함정(live3c) | 사유를 **받은** LWAR | 재발 | 재발시킨 LWAR |
+|---|---|---|---|
+| Q-0007 1000배 스케일 조작 | LWAR6 | **예** (신 Q-0004) | **LWAR5** |
+| Q-0008 통계역학 수입 | LWAR4 | **예** (신 Q-0005) | **LWAR5** |
+| Q-0002 표본효율/계산최적 혼동 | LWAR4 | 아니오 | — |
+| Q-0006 데이터 재사용 반사실 | LWAR5 | 아니오 | — |
+
+**회피 신호를 받은 생성자는 4/4 그 함정을 피했고, 받지 못한 생성자는 2/2 재현했다.** 예외 없음.
+재발 2건은 문구까지 거의 동일했고, 기계 점수 최하위 2위(0.613 / 0.458)로 앉았다 —
+live3c의 원본 2건(0.650 / 0.485)과 거의 같은 값이다.
+
+원인은 `build_allocation` 의 `avoid[i::len(lwars)]` stride 분할이었다. 4건이 2/1/1로 쪼개져
+어느 생성자도 전체를 못 보고, 배정은 **내용과 무관하게 인덱스 순서**가 정했다.
+`operators`/`evidence_kind`/`objective` 는 다양성 손잡이지만 **인간이 이미 거부한 함정은 아니다.**
+전량 배포로 교체함(커밋 `61986b7`). 진단이 맞았는지는 3회차(live5)에서
+같은 두 함정이 사라지는지로 확인한다 — **아직 확인되지 않았다.**
+
+부수 결함 1건도 같이 잡았다: `query_avoid_patterns` 가 `informational` 을 걸러내지 않아,
+"기록으로 남겨라" 판정의 사유가 다음 런에 **"피하라"** 로 전달되고 있었다(커밋 `680c376`).
+
+`decisions.jsonl` 은 1회 압축했다. 사유 없이 넣었던 자리표시 reject 4건이 되먹임 창의
+절반을 차지해 제거했고(백업 `.if/memory/decisions.jsonl.bak-20260819`), 인간 판정 자체는
+`review.yaml` 과 실질 사유 레코드에 온전하다. **append-only 원칙을 깬 유일한 예외이며 반복하지 말 것.**
 
 ### `if_cycle.py --pao` 정규 경로는 한 번도 실행된 적이 없었다 (2026-08-18 수정)
 
@@ -194,11 +226,13 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 - 회귀 테스트 7건 추가(`tests/if`). 다시 죽으면 테스트가 깨진다.
 - e2e 픽스처 5건의 `LWAR3: alibaba` → `xai` 로 교체, `if_cycle.py` CLI 도움말 예시도 교체(정책과 모순이었다).
 
-> ### ⚠ 지금 버스로는 `normal` 모드 IF 런이 불가능하다
+> ### `normal` 모드는 alibaba를 뺀 **3대**를 요구한다 — 해소됨, 그러나 상시 조건
 >
-> 현 로스터는 `LWAR1 alibaba / LWAR2 moonshot / LWAR3 xai`. LWAR1이 배제되면 **2대만 남고**,
-> `normal` 모드는 `>= 3 LWAR`를 요구하므로 `Blocked`된다.
-> IF 런을 재개하려면 **alibaba가 아닌 LWAR 1대를 더 붙여야 한다**(예: Claude Code=anthropic, Codex=openai, DeepSeek=deepseek).
+> `normal` 모드는 `>= 3 LWAR`를 요구하고(`cycle.py:347`) LWAR1(alibaba)은 배제되므로,
+> **alibaba가 아닌 LWAR 3대**가 동시에 살아 있어야 IF 런이 선다.
+> live3c·live4b는 `LWAR4 deepseek / LWAR5 moonshot / LWAR6 xai` 로 성립시켰다.
+> 한 대라도 stale이면 `Blocked` 이므로 런 직전에 `oa status` 로 `runtime_status: active` 를 확인할 것.
+> OA는 LWAR를 띄울 수 없다 — 정욱님이 해당 벤더 세션에서 `/pao-lwar` 를 실행해야 한다.
 > `mode`를 낮추는 선택지도 있으나 그것은 IF 설계의 결정이다.
 
 ---
@@ -270,9 +304,13 @@ python .agents/skills/pao-oa/scripts/pao.py doctor --role oa --clear-leftover-tm
 
 ## 8. 다음 작업 (우선순위)
 
-1. **벤더 다중 LWAR** — 현재 1대(LWAR3). 확장하려면 각 벤더 세션에서 정욱님이 `/pao-lwar` 실행 필요. OA는 못 함. 등록 후 OA가 `reconcile` → ack probe로 검증.
-2. live2 `review.yaml` 인간 adopt — 기계 금지.
-3. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
+1. **live4b 인간 리뷰** — 9건. 자료는 `_workspace/if-live4/review-brief.md`. 기계 금지.
+   닫아야 `decisions.jsonl` 이 갱신되고 live5가 의미를 가진다.
+2. **live5(3회차 `scaling`)** — `avoid_patterns` 전량 배포(`61986b7`)가 재발을 막는지 확인.
+   Q-0004(1000배 스케일)·Q-0005(통계역학 수입) 계열이 사라지면 진단 확증, 남으면 처방을 바꿔야 한다.
+3. **LWAR1(alibaba) 슬롯 처분** — stale·영구 고아. `recover --retire-stale` 권고했으나 판단 미수령.
+4. live2 `review.yaml` 인간 adopt — 기계 금지.
+5. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
 
 OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금지.
 
