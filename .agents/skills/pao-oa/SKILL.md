@@ -145,13 +145,23 @@ outages retain only one degraded entry per deterministic key. Post-flush crash
 recovery filters spool keys already committed to active or rotated logs.
 Active and degraded audit appends are flushed and `fsync`-committed before the
 runtime reports durability or deletes the spool.
+**Retiring a slot: follow the "Retirement runbook" in `recover-maintain.md`.**
+It decides between the four paths and lists the preconditions in order. Two
+things are easy to get wrong from memory: a runtime whose session still answers
+retires through `control:retire` plus a `reconcile` on **every** step of
+`on → draining → off → deregistered`, not through recovery at all; and a
+finished run leaves its results in `outgoing/`, so `collect --archive` must run
+before any forced path or the slot is refused as `active_mailbox_work` while
+looking idle.
 When a previously active runtime is stale and cannot complete clean retirement,
 do not impersonate it or edit the registry. If it has a valid matching
 non-running heartbeat and no active mailbox work, use the explicit
 `recover --retire-stale` procedure in `recover-maintain.md` with the exact
 current tuple, observed `last_seen`, stale threshold, and operator reason.
 Fresh, changed, starting, running, task-bearing, identity-mismatched, or
-work-bearing state fails closed.
+work-bearing state fails closed — except that a runtime which died holding a
+claim is reachable with `--abandoned-task-id`, naming exactly the task its
+heartbeat still points at.
 Audit pruning shares the append lock order and preserves rotated segments that
 still carry deterministic-key evidence referenced by the degraded spool.
 Deterministic append/replay fails closed when any active or rotated audit

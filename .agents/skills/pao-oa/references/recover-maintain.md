@@ -126,6 +126,95 @@ python "<PAO_SKILL>/scripts/oa.py" dead --lwar-id LWAR1 --requeue TASK_ID
 - `dead --requeue` republishes a dead task with `attempt` **incremented** (never reset — attempt is the collect-side fencing key and must stay monotonic). A requeued dead task gets one execution chance per explicit decision; a further lease expiry dead-letters it again. `dead/` is never pruned automatically.
 - **A `blocked` result is a task-definition failure, not a transient one — do NOT blind-requeue it.** When an LWAR returns `blocked` (unsatisfiable criteria, or authority the TaskContract never granted), re-queuing the identical task just burns the retry budget to `dead/` with the same outcome. Re-plan first: fix the `completion_criteria`, widen `permissions`, or correct the `cwd`/contract, then publish a **new** task (`send`) — or report honestly if it cannot be satisfied. `recover`/`dead --requeue` are for interrupted/crashed work, not for wrong contracts.
 
+## Retirement runbook
+
+Four slots were retired on 2026-08-19 and each one needed a different path.
+The order below is what that cost to work out; follow it rather than
+rediscovering it against a live bus.
+
+### Step 0 — is the runtime alive?
+
+Read `status`. A slot at `runtime_status=active`, or one whose session the
+operator can still reach, retires **through the LWAR**, not through recovery:
+
+```bash
+python "<PAO_SKILL>/scripts/oa.py" control --lwar-id LWAR6 --command retire
+```
+
+The LWAR then runs `lwar.py retire` and walks `on → draining → off →
+deregistered` one approved step at a time. **Each step needs an OA
+`reconcile`**, and the LWAR gets exit `2` (`lifecycle_requested` /
+`retire_waiting`) until you run it — so poll `reconcile` on a short cadence
+until the slot leaves the registry, or the LWAR sits waiting on you. This is
+the only path that lets the runtime submit a held task's terminal result
+first, so prefer it whenever the session still answers.
+
+`control:shutdown` is **not** retirement: it stops the ADP loop and leaves a
+resumable slot. Use it when the operator is reorganising and wants the
+registration kept.
+
+### Step 1 — pick the forced path
+
+Only for a runtime that cannot retire itself. Read the heartbeat in `status`:
+
+| Heartbeat | Path |
+|---|---|
+| no current-identity heartbeat at all | `--reclaim-unadopted` |
+| `starting`, past the startup deadline | `--reap-startup` |
+| `watching` / `idle` / `control`, stale | `--retire-stale` |
+| `running` with a `current_task_id`, stale | `--retire-stale --abandoned-task-id TASK_ID` |
+
+### Step 2 — empty the mailbox first
+
+Every forced path refuses a slot with `active_mailbox_work`, counted across
+`incoming`, `claimed`, `leases`, `outgoing`, `control`, `control_claimed`.
+Clear them with the ordinary commands — never by deleting files:
+
+```bash
+python "<PAO_SKILL>/scripts/oa.py" collect --lwar-id LWAR5 --archive      # outgoing/
+python "<PAO_SKILL>/scripts/oa.py" recover --delivery-timeout 300         # incoming/, leases/
+python "<PAO_SKILL>/scripts/oa.py" recover --expire-controls --lwar-id LWAR5 ...   # control/
+```
+
+`collect --archive` is the one people miss. A finished run leaves its results
+in `outgoing/` because the normal collect path does not archive, so a slot can
+look idle and still be refused. Confirm all six queues are zero before
+continuing.
+
+Dead-letters do **not** block retirement and must not be requeued to clear
+them.
+
+### Step 3 — take the tuple from one `status`, then retire
+
+`--instance-id`, `--generation`, and `--expected-last-seen` must all come from
+the **same** `status` snapshot. `expected_last_seen` is the fence that proves
+the runtime has not moved since you looked.
+
+```bash
+python "<PAO_SKILL>/scripts/oa.py" recover --retire-stale --lwar-id LWAR5   --instance-id INSTANCE_ID --generation GENERATION   --expected-last-seen TIMESTAMP --stale-after 120   --abandoned-task-id TASK_ID   --reason "why this runtime cannot come back"
+```
+
+Drop `--abandoned-task-id` unless the heartbeat is holding a claim.
+
+### Rejections, and what each one means
+
+| `reason` | What to do |
+|---|---|
+| `heartbeat_observation_changed` | The runtime moved between your read and the command. Re-read `status` and retry with the new tuple — do **not** reuse the old one. |
+| `heartbeat_not_idle` | The heartbeat holds a claim. If the runtime is genuinely gone, pass `--abandoned-task-id` with **exactly** the task the heartbeat names; a wrong id is refused identically. |
+| `active_mailbox_work` | Step 2 is unfinished. The response names the queue and count. |
+| `heartbeat_not_stale` | Younger than `--stale-after`. It may still be alive; check before forcing. |
+| `identity_mismatch` | Wrong `instance_id`/`generation`. Re-read `status`. |
+| `already_retired` | Idempotent replay of the exact same command. Nothing to do. |
+
+### After
+
+The tombstone records `retirement_mode`, `retirement_reason`, and — on the
+abandoned-claim path — `abandoned_task_id`. `reusable_after` is the tombstone
+retention window; the slot number is reissued to a new registration only once
+it passes. `mailbox/<LWAR>/` stays on disk and is reused on re-registration;
+it is not cleanup debris.
+
 ## Control
 
 ```bash
