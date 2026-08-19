@@ -59,7 +59,12 @@ def build_allocation(brief: dict, lwars: list[dict], avoid: list[str] | None = N
             "operators": ops,
             "evidence_kind": ev,
             "objective": OBJECTIVES[i % 3],
-            "avoid_patterns": avoid[i::max(len(lwars), 1)],
+            # Every slot gets every pattern. Operators, evidence_kind and
+            # objective are the diversity knobs; a rejected trap is not one.
+            # Striding these across slots left each generator blind to most of
+            # them, and RUN-20260819-live4b reproduced exactly the two traps
+            # whose reasons had been routed to a different LWAR.
+            "avoid_patterns": list(avoid),
             "hint_strings": (brief.get("evidence_hints") or {}).get(ev, []),
             "max_seeds": brief.get("budget", {}).get("max_seeds_per_lwar", 8),
             "must_consider": (brief.get("must_consider_slices") or {}).get(lid, []),

@@ -537,3 +537,26 @@ def test_informational_reasons_never_become_avoid_patterns(tmp_path):
         "informational": True,
     })
     assert st.query_avoid_patterns("scaling") == ["genuine defect in the premise"]
+
+
+def test_every_slot_receives_every_avoid_pattern():
+    """build_allocation strided avoid patterns across slots (avoid[i::n]), so a
+    four-reason feedback window reached each generator as one or two reasons and
+    which generator saw which was decided by list order, not by content. In
+    RUN-20260819-live4b every LWAR that received a pattern avoided that trap and
+    the one LWAR that did not receive them reproduced both. Diversity is the job
+    of operators/evidence_kind/objective; a rejected trap must reach everyone."""
+    brief = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]}}
+    lwars = [
+        {"lwar_id": "LWAR4", "vendor_family": "deepseek"},
+        {"lwar_id": "LWAR5", "vendor_family": "moonshot"},
+        {"lwar_id": "LWAR6", "vendor_family": "xai"},
+    ]
+    avoid = ["trap one", "trap two", "trap three", "trap four"]
+    alloc = build_allocation(brief, lwars, avoid)
+    assert len(alloc) == 3
+    for lid, slot in alloc.items():
+        assert slot["avoid_patterns"] == avoid, lid
+    # Distinct lists, so a downstream mutation cannot leak between slots.
+    alloc["LWAR4"]["avoid_patterns"].append("mutated")
+    assert alloc["LWAR5"]["avoid_patterns"] == avoid
