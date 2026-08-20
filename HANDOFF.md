@@ -148,6 +148,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260820-live5b` | **종결** (2026-08-20). 새 로스터(codex/openai, antigravity/google, opencode/zai)로 **첫 시도 완주**, 이탈 0. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, 9/9 succeeded. 인간 리뷰 결과 `decided: {adopt 0, reject 9, defer 0}` — **9건 전부 거부**. 사유는 전부 구체적 문헌 근거를 동반한다. 원인은 개별 질문이 아니라 코퍼스 구조다(§7.7) |
 | `RUN-20260819-live5` | **실패** — `BLOCKED: protocol_incomplete` (2026-08-19). 과학적 실패가 아니라 인프라 실패다. LWAR5가 `generate` claim을 쥔 채 05:33에, LWAR4가 `judge` claim을 쥔 채 06:03에 침묵했다(턴 소진). 두 태스크는 리스 만료 후 dead-letter 됐고, 반론 없는 seed가 남아 compose가 막혔다. LWAR6(xai)만 3단계 완주. **측정 3(전 슬롯 7건 전량)은 라이브 `allocation.yaml`로 확정**, 측정 1·2는 질문이 확정되지 않아 답할 수 없다 — 특히 live4b에서 재발 2건을 만든 LWAR5가 아무것도 내지 못했다. 잔해는 `recover --delivery-timeout` 2회로 정리(dead-letter 4건, requeue 금지) |
 | `RUN-20260819-live4b` | **종결** (2026-08-19). seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, `observed_statuses` 9/9 succeeded. 3사(deepseek/moonshot/xai) + `--pao` 경로 **2회 연속 성공**. human=`closed`, `decided: {adopt 5, reject 3, defer 1}` — 운영자 표와 **정확히 일치**(informational 0건이라 live3c 같은 집계 차이가 없다). reviewer `Jung Wook Yang`. 검토 자료 `_workspace/if-live4/review-brief.md` |
 | `RUN-20260819-live4` | 중단됨(`PAO_OA_ID` 미설정으로 첫 `send`에서 fail-closed). 버스 부작용 0. `allocation.yaml` 이 되먹임 도달의 증거라 보존 |
@@ -377,13 +378,45 @@ oa.py recover --retire-stale --lwar-id LWAR5   --instance-id INSTANCE_ID --gener
 
 ---
 
+## 7.7 코퍼스 지평선 — live5b가 9/9 거부된 진짜 이유 (2026-08-20)
+
+live5b는 프로토콜상 완벽했다(`protocol_valid: true`, 이탈 0, 9/9 succeeded).
+그런데 인간 리뷰에서 **9건 전부 거부**됐고, 사유 9건 중 6건이
+"이미 답이 나옴" 또는 "전제 소멸"이었다 — Muennighoff 2023, Sardana & Frankle 2023,
+Porian 2024 등 **2023–2024 후속 문헌이 이미 닫은 갭**을 미지로 오인해 질문을 만든 것이다.
+
+리뷰어의 배치 진단: *"근거 코퍼스가 2020/2022 두 논문뿐이라, 두 논문 사이의 갭을
+미지로 오인했다."* 이것은 증상 기술이고, **기전은 게이트에 있다.**
+
+`mechanical_gates` 의 `G-GROUND` 는 모든 `evidence[].source` 가
+`evidence_hints` 의 문자열과 일치할 것을 요구한다(`gates.py:21`, `source_in_hints`).
+`_workspace/if-live5/papers.txt` 는 **두 줄**이고 `evidence_hints.papers` 도 두 항목뿐이었다.
+따라서 생성기가 Muennighoff 2023 을 알고 인용하려 해도 **그 seed 는 G-GROUND 에서
+탈락한다.** 파이프라인은 후속 문헌을 모르는 것이 아니라 **인용이 금지돼 있었다.**
+
+즉 이것은 생성 품질 문제가 아니라 **코퍼스 지평선을 게이트가 강제한 결과**다.
+형식 게이트를 더 붙여도 고쳐지지 않는다. 고칠 곳은 `evidence_hints` 다.
+
+리뷰어의 부수 지적: 측정 불가능한 이름뿐인 변수가 3건(Q-0002/0003/0005).
+"변수는 기존 문헌에 측정 절차가 존재하는 것만 허용" 제약은 코퍼스를 넓히면
+일부 자연 해소되지만(측정 절차가 있는 논문을 인용할 수 있게 되므로) 별개 사안이다.
+
+### 회피 창이 비워졌다
+
+`query_avoid_patterns` 의 창은 `n=8`. 이번 9건 거부로 **live3c·live4b 의 7개 함정이
+전부 밀려났고**, live5b 자신의 첫 사유(Q-0001)까지 함께 잘렸다. 현재 창은
+live5b 사유 8건뿐이다. 1000배 스케일·물리 유비·모순 선결가정 함정은 더 이상
+다음 런에 전달되지 않는다 — **한 번의 대량 거부가 축적된 신호를 통째로 지운다.**
+
 ## 8. 다음 작업 (우선순위)
 
 1. **새 로스터 등록 대기** — Codex / Antigravity / Grok. OA는 LWAR를 띄울 수 없다.
    등록되면 `reconcile` → `status` 로 신고된 `vendor_family`/`adapter_id` 를 배제 정책과 대조할 것.
-2. **live5b(3회차 `scaling`)** — 브리프는 `_workspace/if-live5/brief-5b.yaml` 로 준비돼 있다.
-   `avoid_patterns` 전량 배포(`61986b7`)가 재발을 막는지 확인한다. 교란 요인은 위 절 참조.
-   런 중 감시는 `--busy-grace 960`.
+2. **코퍼스 지평선 수리** — §7.7. `evidence_hints` 에 2023–2024 후속 문헌을 넣지 않으면
+   다음 런도 같은 이유로 전멸한다. `G-GROUND` 가 힌트 밖 인용을 막으므로 브리프 수정이
+   유일한 지렛대다.
+3. **회피 창 정책** — `n=8` 고정이라 대량 거부 한 번에 축적 신호가 전부 날아간다(§7.7).
+   창 확대, 도메인별 분리, 또는 함정 유형 요약 유지 중 택일이 필요하다.
 3. live2 `review.yaml` 인간 adopt — 기계 금지.
 4. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
 
