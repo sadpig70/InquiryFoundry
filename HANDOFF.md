@@ -148,7 +148,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
-| `RUN-20260820-live6` | **완주**, `human=awaiting_human` (2026-08-20). 코퍼스 확장 후 첫 런. seed 9 / qo 9 / scored 9, `protocol_valid` true, 9/9 succeeded, 이탈 0. 근거 18건 중 신규 후속 문헌이 12건. 효과와 남은 패턴은 §7.8. 검토 자료 `_workspace/if-live6/review-brief.md` |
+| `RUN-20260820-live6` | **종결** (2026-08-20). 코퍼스 확장 후 첫 런. seed 9 / qo 9 / scored 9, `protocol_valid` true, 9/9 succeeded, 이탈 0. 근거 18건 중 신규 후속 문헌이 12건. `decided: {adopt 3, reject 5, defer 1}` — **live3c 이후 첫 채택**이고 live5b 의 9/9 거부에서 크게 개선됐다. 채택 Q-0015/0016/0017, 유보 Q-0013. 효과·남은 패턴·리뷰어 관측은 §7.8 |
 | `RUN-20260820-live5b` | **종결** (2026-08-20). 새 로스터(codex/openai, antigravity/google, opencode/zai)로 **첫 시도 완주**, 이탈 0. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, 9/9 succeeded. 인간 리뷰 결과 `decided: {adopt 0, reject 9, defer 0}` — **9건 전부 거부**. 사유는 전부 구체적 문헌 근거를 동반한다. 원인은 개별 질문이 아니라 코퍼스 구조다(§7.7) |
 | `RUN-20260819-live5` | **실패** — `BLOCKED: protocol_incomplete` (2026-08-19). 과학적 실패가 아니라 인프라 실패다. LWAR5가 `generate` claim을 쥔 채 05:33에, LWAR4가 `judge` claim을 쥔 채 06:03에 침묵했다(턴 소진). 두 태스크는 리스 만료 후 dead-letter 됐고, 반론 없는 seed가 남아 compose가 막혔다. LWAR6(xai)만 3단계 완주. **측정 3(전 슬롯 7건 전량)은 라이브 `allocation.yaml`로 확정**, 측정 1·2는 질문이 확정되지 않아 답할 수 없다 — 특히 live4b에서 재발 2건을 만든 LWAR5가 아무것도 내지 못했다. 잔해는 `recover --delivery-timeout` 2회로 정리(dead-letter 4건, requeue 금지) |
 | `RUN-20260819-live4b` | **종결** (2026-08-19). seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, `observed_statuses` 9/9 succeeded. 3사(deepseek/moonshot/xai) + `--pao` 경로 **2회 연속 성공**. human=`closed`, `decided: {adopt 5, reject 3, defer 1}` — 운영자 표와 **정확히 일치**(informational 0건이라 live3c 같은 집계 차이가 없다). reviewer `Jung Wook Yang`. 검토 자료 `_workspace/if-live4/review-brief.md` |
@@ -452,6 +452,33 @@ live6 이 그 방식으로 충분함을 보였다(아래). 요약 본문을 사�
 - **자원 초과 설계가 재발했다.** Q-0010 은 `1e25 FLOPs` 영역을 요구한다.
   live5b Q-0001 이 `1e18~1e22` 실측 스윕으로 실행 가능성 게이트에서 탈락했는데
   더 큰 규모를 요구한다. 회피 창에 그 사유가 실려 있었는데도 재발했다.
+
+### 인간 리뷰 결과와 리뷰어 관측 (2026-08-20)
+
+`adopt 3 / reject 5 / defer 1`. **live5b 의 9/9 거부에서 실질 개선**이고
+live3c 이후 첫 채택이다. 코퍼스 수리의 효과는 인간 판정으로 확인됐다.
+
+거부 사유의 **유형이 바뀐 것**이 더 중요하다. live5b 는 6건이 "이미 답이 나옴"이었는데
+live6 에는 그 유형이 **0건**이다. 대신 실행 가능성(3건)과 전제 오류(2건)로 옮겨갔다.
+
+리뷰어 관측 2건:
+
+**(1) 근거 오귀속이 형식 게이트를 통과한다.** Q-0012 의 besiroglu2024 인용은 원 논문
+범위와 불일치, Q-0010 의 porian2024 인용도 과잉 확장으로 의심된다. 코드로 확인했다 —
+`G-GROUND` 는 `e["source"]` 가 힌트와 부분 일치하고 `e["claim"]` 이 **비어 있지 않은지만**
+본다(`gates.py:18-24`). 주장이 그 논문의 실제 내용인지 검사하는 코드는 없다.
+
+**이것은 게이트를 강화해서 고칠 수 없다.** 힌트가 식별자 문자열뿐이라 기계에는
+대조할 원문이 없다. 실질적 선택지는 (a) `--pack` 으로 논문 본문을 코퍼스에 넣기,
+(b) contrarian 에게 인용 충실도 공격을 명시적으로 시키기(`DISSENT_TYPES` 에 `evidence`
+가 이미 있다) 둘 중 하나다.
+
+**(2) 생성기가 비공개 프론티어 데이터를 실행 계획의 입력으로 가정한다.** 거부 5건 중
+3건(Q-0010 10^24–10^26 FLOPs 그리드, Q-0014 비공개 사고 로그)과 유보 1건이 실행 가능성에서
+걸렸다. **회피 신호로는 막히지 않았다** — live5b Q-0001 이 `1e18~1e22` 스윕으로 탈락했고
+그 사유가 회피 창에 실려 있었는데도 live6 은 더 큰 규모를 요구했다.
+리뷰어 권고는 "공개 획득 가능한 데이터·재현 가능한 규모만 실행 계획에 사용" 을
+**상시 제약**으로 거는 것이다. 그 자리가 브리프의 `constraints` 인데, 아래대로 죽어 있다.
 
 ### 죽은 브리프 필드 (live6 조사 중 확인)
 
