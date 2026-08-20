@@ -11,6 +11,7 @@ from .allocate import build_allocation, inject_divergence, vendor_family
 from .bus import ensure_jail, publish_collect
 from .compose import compose, stamp_lineage
 from .const import EXCLUDE_ADAPTERS, EXCLUDE_FAMILIES, PRIOR_N, TH_MEAN, TH_PAIR
+from .schema import SchemaError, validate_obj
 from .contrarian import cross_examine
 from .generate import generate
 from .judge import blind_packet, judge
@@ -26,6 +27,7 @@ class Run:
     brief: dict
     nonce: bytes
     observed_statuses: list[str] = field(default_factory=list)
+    dropped_seeds: list[dict] = field(default_factory=list)
 
 
 def init_run(store: Store, brief: dict) -> Run:
@@ -82,10 +84,32 @@ def diversity_ok(seeds: list, prior_sets: list[set[str]],
     return (sum(pool) / len(pool)) <= th_mean
 
 
-def flatten_seeds(accepted: dict[str, list], run_id: str) -> list:
+def flatten_seeds(accepted: dict[str, list], run_id: str,
+                  dropped: list[dict] | None = None) -> list:
+    """Ingest is a trust boundary; validate here, not only on the worker side.
+
+    The worker runs `if_lwar.py --validate-only`, but nothing re-checked its
+    outbox, so a malformed seed reached compose and judge unvalidated.
+    RUN-20260820-live7 died on `TypeError` in judge because one `unknowns`
+    entry was a dict: the worker wrote an unquoted YAML scalar containing
+    ": ", which YAML parses as a mapping. The content was right and the
+    serialisation was not, and the whole nine-question run was lost to it.
+
+    A bad seed is dropped, not fatal, and recorded so the loss is visible.
+    """
     out = []
     for lid, box in accepted.items():
         for s in box or []:
+            try:
+                validate_obj("seed_outbox", s)
+            except SchemaError as error:
+                if dropped is not None:
+                    dropped.append({
+                        "lwar_id": lid,
+                        "local_id": s.get("local_id") if isinstance(s, dict) else None,
+                        "reason": str(error),
+                    })
+                continue
             try:
                 out.append(stamp_lineage(s, lid, run_id))
             except Drop:
@@ -111,7 +135,7 @@ def explore_loop(store: Store, run: Run, alloc: dict, lwars: list, packs=None) -
             got = generate(inbox, hint_dir=jail / "hints")
             accepted[lid] = got
             run.observed_statuses.append("succeeded")
-        seeds = flatten_seeds(accepted, run.id)
+        seeds = flatten_seeds(accepted, run.id, run.dropped_seeds)
         if diversity_ok(seeds, prior):
             return seeds
         if rounds == max_rounds - 1:
@@ -219,6 +243,7 @@ def fail_report(run: Run, reason: str) -> dict:
         "human": "failed",
         "dissent_referenced": False,
         "slo_scored_ge_8": False,
+        "dropped_seeds": run.dropped_seeds,
         "contributing_generate_lwars": 0,
         "observed_statuses": run.observed_statuses,
         "reason": reason,
@@ -242,7 +267,7 @@ def explore_loop_pao(store: Store, run: Run, alloc: dict, lwars: list, packs=Non
     timeout = int(run.brief.get("budget", {}).get("generate_timeout_s") or 900)
     accepted, statuses = publish_collect(run.dir, "generate", items, timeout)
     run.observed_statuses.extend(statuses)
-    return flatten_seeds(accepted, run.id)
+    return flatten_seeds(accepted, run.id, run.dropped_seeds)
 
 
 def exploit_loop_pao(run: Run, seeds: list, lwars: list, mode: str) -> tuple[dict, dict]:
@@ -395,6 +420,10 @@ def inquiry_cycle(brief: dict, lwars: list[dict], if_root=None, packs=None, pao:
         "slo_scored_ge_8": len(scored) >= 8,
         "contributing_generate_lwars": len(contrib),
         "observed_statuses": run.observed_statuses,
+        # Seeds a worker produced and ingest refused. Not fatal, but never
+        # silent: a run that quietly shrank looks the same as one that was
+        # small to begin with.
+        "dropped_seeds": run.dropped_seeds,
     }
     atomic_write_yaml(run.dir / "report.yaml", report)
     return report

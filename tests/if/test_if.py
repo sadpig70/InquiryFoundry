@@ -597,3 +597,50 @@ def test_a_brief_without_constraints_still_allocates():
     ]
     alloc = build_allocation(brief, lwars, None)
     assert all(slot["constraints"] == [] for slot in alloc.values())
+
+
+def test_a_malformed_seed_is_dropped_at_ingest_not_fatal():
+    """The worker validates its own outbox and nothing re-checked it, so a
+    malformed seed reached judge unvalidated and killed RUN-20260820-live7 with
+    a TypeError. The worker had written an unquoted YAML scalar containing ": ",
+    which YAML parses as a mapping, so one `unknowns` entry became a dict. Ingest
+    is a trust boundary: drop the seed, record it, keep the run."""
+    from if_core.cycle import flatten_seeds
+
+    def seed(local_id, unknowns):
+        return {
+            "local_id": local_id,
+            "question": "does the fitted exponent survive exact FLOP accounting?",
+            "question_norm": "does the fitted exponent survive exact flop accounting",
+            "question_class": "phenomenon",
+            "operator": "OP-BOUND",
+            "unknown_type": "boundary",
+            "unknown_ref": "U-RUN-X-1",
+            "unknowns": unknowns,
+            "evidence": [{
+                "source": "papers/kaplan2020",
+                "claim": "loss follows a power law in compute",
+                "confidence": 0.7,
+            }],
+            "lineage": {
+                "generated_by": "LWAR2",
+                "evidence_kind": "papers",
+                "objective": "consensus_falsify",
+                "run_id": "RUN-X",
+                "parents": [],
+                "domain": "scaling",
+            },
+        }
+
+    good = seed("LWAR2-01", ["whether the exponent shifts"])
+    # Exactly the shape YAML produced from an unquoted scalar holding ": ".
+    bad = seed("LWAR2-99", [{"대형 어휘집(예": "32k vs 128k) 편차"}])
+
+    dropped = []
+    out = flatten_seeds({"LWAR2": [good, bad]}, "RUN-X", dropped)
+
+    assert [x["local_id"] for x in out] == ["LWAR2-01"]
+    assert len(dropped) == 1
+    assert dropped[0]["lwar_id"] == "LWAR2"
+    assert dropped[0]["local_id"] == "LWAR2-99"
+    assert "unknowns" in dropped[0]["reason"]
