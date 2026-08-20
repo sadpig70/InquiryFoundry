@@ -644,3 +644,86 @@ def test_a_malformed_seed_is_dropped_at_ingest_not_fatal():
     assert dropped[0]["lwar_id"] == "LWAR2"
     assert dropped[0]["local_id"] == "LWAR2-99"
     assert "unknowns" in dropped[0]["reason"]
+
+
+def _compose_seed(local_id, question_class="phenomenon"):
+    return {
+        "local_id": local_id,
+        "question": "does the fitted exponent survive exact FLOP accounting?",
+        "question_norm": "does the fitted exponent survive exact flop accounting",
+        "question_class": question_class,
+        "operator": "OP-BOUND",
+        "unknown_type": "boundary",
+        "unknown_ref": "U-RUN-X-1",
+        "target_concepts": ["scaling laws"],
+        "assumptions": ["the two papers minimise the same loss"],
+        "unknowns": ["whether the exponent shifts"],
+        "why_matters": "the accounting convention decides the reported exponent",
+        "evidence": [{
+            "source": "papers/kaplan2020",
+            "claim": "loss follows a power law in compute",
+            "confidence": 0.7,
+        }],
+        "falsifier": "the exponent is unchanged under exact accounting",
+        "minimal_test": {
+            "variable": "fitted exponent",
+            "comparison": "approximate versus exact FLOP accounting",
+            "reject_if": "bootstrap interval lies within a plus or minus 0.03 band",
+        },
+        "action_plan": {
+            "method": "data",
+            "data": "published isoFLOP tables",
+            "metric": "fitted exponent",
+            "criterion": "bootstrap interval within the equivalence band",
+        },
+        "lineage": {
+            "generated_by": "LWAR1", "evidence_kind": "papers",
+            "objective": "consensus_falsify", "run_id": "RUN-X",
+            "parents": [], "domain": "scaling",
+        },
+    }
+
+
+def test_a_missing_judge_card_dormants_instead_of_rejecting(tmp_path):
+    """A judge that never answered has said nothing about the question. compose
+    folded that into the same GATE_FAIL a judge issues deliberately, so when
+    RUN-20260820-live7b lost a runtime to credit exhaustion, four sound
+    questions were marked REJECTED by an infrastructure failure. DORMANT is
+    recoverable (DORMANT -> SCORED is legal); REJECTED burns the question."""
+    from if_core.compose import compose
+
+    store = Store(tmp_path)
+    run_dir = tmp_path / "runs" / "RUN-X"
+    run_dir.mkdir(parents=True)
+    judged = _compose_seed("LWAR1-01")
+    unjudged = _compose_seed("LWAR1-02")
+    dissent = {"verdict": "SURVIVED", "attacks": []}
+    qos = compose(
+        store, run_dir, "RUN-X", [judged, unjudged],
+        {"LWAR1-01": dict(dissent, local_id="LWAR1-01"),
+         "LWAR1-02": dict(dissent, local_id="LWAR1-02")},
+        {"LWAR1-01": {"verdict": "PASS", "scores": {
+            "impact": 0.8, "testability": 0.8, "grounding": 0.8, "actionability": 0.8}}},
+        {"papers": ["papers/kaplan2020"]}, "normal",
+    )
+    by_local = {q["local_id"]: q for q in qos}
+    assert by_local["LWAR1-01"]["status"] == "SCORED"
+    assert by_local["LWAR1-02"]["status"] == "DORMANT"
+
+
+def test_a_judge_that_did_answer_gate_fail_still_rejects(tmp_path):
+    """The fence must not swallow a real verdict: an explicit GATE_FAIL is
+    evidence about the question and still rejects it."""
+    from if_core.compose import compose
+
+    store = Store(tmp_path)
+    run_dir = tmp_path / "runs" / "RUN-Y"
+    run_dir.mkdir(parents=True)
+    seed = _compose_seed("LWAR1-01")
+    qos = compose(
+        store, run_dir, "RUN-Y", [seed],
+        {"LWAR1-01": {"verdict": "SURVIVED", "attacks": [], "local_id": "LWAR1-01"}},
+        {"LWAR1-01": {"verdict": "GATE_FAIL", "scores": {}, "failed_gate": "G-PATH"}},
+        {"papers": ["papers/kaplan2020"]}, "normal",
+    )
+    assert qos[0]["status"] == "REJECTED"

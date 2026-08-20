@@ -424,6 +424,11 @@ def inquiry_cycle(brief: dict, lwars: list[dict], if_root=None, packs=None, pao:
         # silent: a run that quietly shrank looks the same as one that was
         # small to begin with.
         "dropped_seeds": run.dropped_seeds,
+        # Seeds no judge ever scored. protocol_valid stays true for these —
+        # the protocol was followed and a runtime died — so without this the
+        # headline field reads clean on a run that lost a third of its
+        # judging, as RUN-20260820-live7b did.
+        "unjudged": [s["local_id"] for s in seeds if s["local_id"] not in cards],
     }
     atomic_write_yaml(run.dir / "report.yaml", report)
     return report

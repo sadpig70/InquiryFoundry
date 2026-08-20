@@ -56,6 +56,12 @@ def compose(store: Store, run_dir: Path, run_id: str, seeds: list, dissents: dic
             if mode == "normal":
                 raise Blocked("protocol_incomplete")
             d = empty_dissent(s)
+        # No card at all is not a verdict. RUN-20260820-live7b lost a judge to
+        # credit exhaustion and four sound questions were marked REJECTED for
+        # it — an infrastructure failure wearing the costume of a quality
+        # judgement. `missing_card` is tracked apart from a judge's GATE_FAIL
+        # below, and lands in DORMANT, which is recoverable.
+        card_missing = s["local_id"] not in cards
         c = cards.get(s["local_id"]) or {
             "verdict": "GATE_FAIL", "scores": {}, "failed_gate": "missing_card",
         }
@@ -63,8 +69,15 @@ def compose(store: Store, run_dir: Path, run_id: str, seeds: list, dissents: dic
         hints = hints_by_kind.get(s["lineage"]["evidence_kind"], [])
         q = materialize_qo(s, d, qid, hints, ts)
         mech_fail = any(q["gate_results"].get(g) == "fail" for g in MECH)
-        if d.get("verdict") == "KILLED" or c.get("verdict") == "GATE_FAIL" or mech_fail:
+        judged_out = d.get("verdict") == "KILLED" or mech_fail or (
+            c.get("verdict") == "GATE_FAIL" and not card_missing
+        )
+        if judged_out:
             nxt = "REJECTED"
+        elif card_missing:
+            # Never scored, so it cannot be SCORED; DORMANT keeps it alive
+            # (DORMANT -> SCORED is legal) instead of burning it.
+            nxt = "DORMANT"
         elif q.get("question_class") in {"normative", "meta"}:
             nxt = "DORMANT"
         else:
