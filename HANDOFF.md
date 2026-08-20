@@ -148,6 +148,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260820-live6` | **완주**, `human=awaiting_human` (2026-08-20). 코퍼스 확장 후 첫 런. seed 9 / qo 9 / scored 9, `protocol_valid` true, 9/9 succeeded, 이탈 0. 근거 18건 중 신규 후속 문헌이 12건. 효과와 남은 패턴은 §7.8. 검토 자료 `_workspace/if-live6/review-brief.md` |
 | `RUN-20260820-live5b` | **종결** (2026-08-20). 새 로스터(codex/openai, antigravity/google, opencode/zai)로 **첫 시도 완주**, 이탈 0. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, 9/9 succeeded. 인간 리뷰 결과 `decided: {adopt 0, reject 9, defer 0}` — **9건 전부 거부**. 사유는 전부 구체적 문헌 근거를 동반한다. 원인은 개별 질문이 아니라 코퍼스 구조다(§7.7) |
 | `RUN-20260819-live5` | **실패** — `BLOCKED: protocol_incomplete` (2026-08-19). 과학적 실패가 아니라 인프라 실패다. LWAR5가 `generate` claim을 쥔 채 05:33에, LWAR4가 `judge` claim을 쥔 채 06:03에 침묵했다(턴 소진). 두 태스크는 리스 만료 후 dead-letter 됐고, 반론 없는 seed가 남아 compose가 막혔다. LWAR6(xai)만 3단계 완주. **측정 3(전 슬롯 7건 전량)은 라이브 `allocation.yaml`로 확정**, 측정 1·2는 질문이 확정되지 않아 답할 수 없다 — 특히 live4b에서 재발 2건을 만든 LWAR5가 아무것도 내지 못했다. 잔해는 `recover --delivery-timeout` 2회로 정리(dead-letter 4건, requeue 금지) |
 | `RUN-20260819-live4b` | **종결** (2026-08-19). seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, `observed_statuses` 9/9 succeeded. 3사(deepseek/moonshot/xai) + `--pao` 경로 **2회 연속 성공**. human=`closed`, `decided: {adopt 5, reject 3, defer 1}` — 운영자 표와 **정확히 일치**(informational 0건이라 live3c 같은 집계 차이가 없다). reviewer `Jung Wook Yang`. 검토 자료 `_workspace/if-live4/review-brief.md` |
@@ -407,6 +408,63 @@ Porian 2024 등 **2023–2024 후속 문헌이 이미 닫은 갭**을 미지로 
 전부 밀려났고**, live5b 자신의 첫 사유(Q-0001)까지 함께 잘렸다. 현재 창은
 live5b 사유 8건뿐이다. 1000배 스케일·물리 유비·모순 선결가정 함정은 더 이상
 다음 런에 전달되지 않는다 — **한 번의 대량 거부가 축적된 신호를 통째로 지운다.**
+
+## 7.8 코퍼스 수리와 그 효과 — live6 (2026-08-20)
+
+§7.7 진단대로 `evidence_hints.papers` 를 2편 → **6편**으로 넓혔다.
+브리프는 `_workspace/`(git 제외)에 있으므로 **코퍼스 구성은 여기에만 기록된다:**
+
+```yaml
+evidence_hints:
+  papers: [papers/kaplan2020, papers/hoffmann2022,
+           papers/muennighoff2023, papers/sardana2023,
+           papers/porian2024, papers/besiroglu2024]
+```
+
+**힌트 전달 경로 — 오해하기 쉬운 곳.** `--pack` 없이 돌리면 jail 의 힌트 파일은
+`materialize_hints` 가 `hint_strings`(=`evidence_hints[kind]`)에서 **생성**한다
+(`cycle.py:56-59`). `_workspace/*/papers.txt` 는 `--pack` 으로 넘기지 않는 한
+**전혀 쓰이지 않는다.** 그 파일을 고쳐도 아무 효과가 없다.
+
+힌트는 논문 본문이 아니라 **식별자 문자열**뿐이고, 런타임의 학습 지식에 의존한다.
+live6 이 그 방식으로 충분함을 보였다(아래). 요약 본문을 사람이 써 넣으면
+**그 사람이 근거 코퍼스의 저자가 되므로** 하지 않는 편이 낫다.
+
+### 효과 (인간 리뷰 전, 기계 관측만)
+
+- **후속 문헌 인용**: generate 근거 18건 중 **신규 4편이 12건**
+  (porian 4 / muennighoff 3 / besiroglu 3 / sardana 2), kaplan2020 은 1건으로 떨어졌다.
+  9문항 중 8문항이 후속 문헌에 근거한다.
+- **질문의 성격이 바뀌었다.** live5b 는 두 논문 *사이의 갭*을 팠고 6건이
+  "이미 답이 나옴"으로 거부됐다. live6 은 후속 문헌이 **끝난 지점에서 시작**한다 —
+  Muennighoff 의 4-epoch knee 를 놓고 *왜* 생기는지(Q-0016), Porian 의 분해 후
+  *잔차가 남는지*(Q-0017), Sardana 의 처방이 수요 *불확실성* 하에서도 서는지(Q-0018).
+- **측정 가능한 변수로 이동**. live5b 의 이름뿐인 변수 3건
+  (`irreversible_entropy_production_rate` 등) 같은 것이 사라지고,
+  프로파일러·실행 로그·공개 데이터 재분석으로 잴 수 있는 변수가 자리했다.
+
+### 남은 패턴 두 가지
+
+- **`OP-XDOM` 은 계속 외부 도메인 유비를 부른다.** 상전이(live3c) → 재규격화군(live4b)
+  → 비평형 열역학(live5b) → 제어이론 외란 제거(live6, Q-0011). 네 번 연속이다.
+  live6 것은 두 논문에 근거하고 기제를 특정한다는 점에서 이전보다 낫지만,
+  이 연산자가 유비를 부르는 구조인지 확인이 필요하다.
+- **자원 초과 설계가 재발했다.** Q-0010 은 `1e25 FLOPs` 영역을 요구한다.
+  live5b Q-0001 이 `1e18~1e22` 실측 스윕으로 실행 가능성 게이트에서 탈락했는데
+  더 큰 규모를 요구한다. 회피 창에 그 사유가 실려 있었는데도 재발했다.
+
+### 죽은 브리프 필드 (live6 조사 중 확인)
+
+생성기에 실제로 도달하는 것은 `allocation_slice` 안의 것뿐이다
+(`operators`, `evidence_kind`, `objective`, `avoid_patterns`, `hint_strings`,
+`max_seeds`, `must_consider`). 그 밖에:
+
+- **`constraints`** — `schema.py:142` 에 정의만 있고 **어디서도 읽지 않는다.** 죽은 필드.
+- **`forbidden_premises`** — contrarian/judge 에만 전달되고(`cycle.py:153,262`)
+  **generate 에는 도달하지 않는다.**
+
+브리프 작성자가 이 둘로 생성을 제어할 수 있다고 착각하기 쉽다.
+`EXCLUDE_FAMILIES` 가 선언만 되고 강제되지 않던 것과 같은 유형이다. 아직 고치지 않았다.
 
 ## 8. 다음 작업 (우선순위)
 
