@@ -560,3 +560,40 @@ def test_every_slot_receives_every_avoid_pattern():
     # Distinct lists, so a downstream mutation cannot leak between slots.
     alloc["LWAR4"]["avoid_patterns"].append("mutated")
     assert alloc["LWAR5"]["avoid_patterns"] == avoid
+
+
+def test_brief_constraints_reach_every_generator_slot():
+    """`constraints` has been in the brief schema from the start and nothing ever
+    read it, so an operator could state a rule, watch the brief validate, and
+    have it silently dropped. That is worse than rejecting it. It is a standing
+    rule, not a diversity knob, so every slot gets the whole list — the same
+    reasoning as avoid_patterns after RUN-20260819-live4b."""
+    rule = ("실행 계획은 공개 획득 가능한 데이터와 재현 가능한 규모만 사용한다.",
+            "비공개 프론티어 내부 로그를 전제하지 않는다.")
+    brief = {
+        "mode": "normal",
+        "evidence_hints": {"papers": ["p/a"]},
+        "constraints": list(rule),
+    }
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+        {"lwar_id": "LWAR3", "vendor_family": "zai"},
+    ]
+    alloc = build_allocation(brief, lwars, ["a trap"])
+    for lid, slot in alloc.items():
+        assert slot["constraints"] == list(rule), lid
+    # Distinct lists, so one slot cannot mutate another's rules.
+    alloc["LWAR1"]["constraints"].append("leaked")
+    assert alloc["LWAR2"]["constraints"] == list(rule)
+
+
+def test_a_brief_without_constraints_still_allocates():
+    """The field is optional; absence must mean an empty rule set, not a crash."""
+    brief = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]}}
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+    ]
+    alloc = build_allocation(brief, lwars, None)
+    assert all(slot["constraints"] == [] for slot in alloc.values())

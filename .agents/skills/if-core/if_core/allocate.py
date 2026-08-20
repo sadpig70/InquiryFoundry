@@ -65,6 +65,15 @@ def build_allocation(brief: dict, lwars: list[dict], avoid: list[str] | None = N
             # them, and RUN-20260819-live4b reproduced exactly the two traps
             # whose reasons had been routed to a different LWAR.
             "avoid_patterns": list(avoid),
+            # A standing rule for every generator, unlike avoid_patterns, which
+            # is a list of things that already went wrong. The brief has carried
+            # this field since the schema was written and nothing ever read it,
+            # so an operator could state a constraint, watch the brief validate,
+            # and have it silently dropped. RUN-20260820-live6 is what that
+            # costs: a question was rejected for demanding a 1e18-1e22 sweep,
+            # that reason sat in the avoid window, and the next run asked for
+            # 1e24-1e26 anyway. Past examples do not bind; a rule can.
+            "constraints": list(brief.get("constraints") or []),
             "hint_strings": (brief.get("evidence_hints") or {}).get(ev, []),
             "max_seeds": brief.get("budget", {}).get("max_seeds_per_lwar", 8),
             "must_consider": (brief.get("must_consider_slices") or {}).get(lid, []),
