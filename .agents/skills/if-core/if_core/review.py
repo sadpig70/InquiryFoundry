@@ -47,6 +47,13 @@ def open_review(store: Store, run_dir: Path, run_id: str, qos: list[dict]) -> di
         if qid in seen:
             continue
         seen.add(qid)
+        # DORMANT is parked, not pending: a question no judge scored, or one
+        # whose class is out of scope. There is nothing for a human to decide
+        # and `close_review` cannot legally move DORMANT to REVIEWED, so a card
+        # here makes the run unclosable. It stays in dissent_portfolio, which
+        # is what preflight_close actually requires.
+        if q["status"] == "DORMANT":
+            continue
         info = q["status"] == "REJECTED" and qid not in pids
         cards.append({
             "question_id": qid,

@@ -727,3 +727,32 @@ def test_a_judge_that_did_answer_gate_fail_still_rejects(tmp_path):
         {"papers": ["papers/kaplan2020"]}, "normal",
     )
     assert qos[0]["status"] == "REJECTED"
+
+
+def test_dormant_questions_are_not_put_up_for_human_decision(tmp_path):
+    """A DORMANT question is parked, not pending — either no judge scored it or
+    its class is out of scope. close_review cannot legally move DORMANT to
+    REVIEWED, so listing one as a decision makes the run unclosable. It must
+    still appear in dissent_portfolio, which is what preflight_close requires.
+    """
+    from if_core.review import open_review
+
+    store = Store(tmp_path)
+    run_dir = tmp_path / "runs" / "RUN-Z"
+    run_dir.mkdir(parents=True)
+
+    def qo(qid, status, wounded):
+        return {
+            "question_id": qid, "local_id": qid[-2:], "status": status,
+            "question": "q", "minimal_test": {"variable": "v"},
+            "scores": {"impact": 0.8, "testability": 0.8,
+                       "grounding": 0.8, "actionability": 0.8} if status == "SCORED" else {},
+            "dissent": [{"result": "wound"}] if wounded else [],
+        }
+
+    qos = [qo("Q-1", "SCORED", True), qo("Q-2", "DORMANT", True)]
+    open_review(store, run_dir, "RUN-Z", qos)
+    doc = yaml.safe_load((run_dir / "review.yaml").read_text(encoding="utf-8"))
+
+    assert [d["question_id"] for d in doc["decisions"]] == ["Q-1"]
+    assert "Q-2" in doc["dissent_portfolio"]
