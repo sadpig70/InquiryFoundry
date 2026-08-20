@@ -1470,10 +1470,17 @@ def command_status(args: argparse.Namespace) -> int:
         "registry_version": registry["registry_version"],
         "lwars": states,
         "needs_operator": needs_operator,
-        # Available right now. A busy LWAR is alive but not free, so quorum is
-        # `routable_count + busy_count`, not `routable_count` alone.
+        # Free right now.
         "routable_count": sum(1 for s in states if s["runtime_status"] == "active"),
+        # Holding a claim within the grace. This OVERLAPS routable_count: a
+        # runtime that refreshes its heartbeat while executing is both, which
+        # the 2026-08-20 roster does and the exit-notify one did not. Use
+        # alive_count for quorum — summing the two double-counts them.
         "busy_count": sum(1 for s in states if s["state"] == "on" and _busy(s)),
+        "alive_count": sum(
+            1 for s in states
+            if s["state"] == "on" and (s["runtime_status"] == "active" or _busy(s))
+        ),
     })
     return 0
 

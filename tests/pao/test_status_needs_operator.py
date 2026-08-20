@@ -182,3 +182,22 @@ def test_the_grace_boundary_is_configurable(tmp_path):
     tight = json.loads(proc.stdout.strip().splitlines()[-1])
     assert [x["lwar_id"] for x in tight["needs_operator"]] == ["LWAR1"]
     assert _status(tmp_path)["needs_operator"] == []   # default 1800s: still busy
+
+
+def test_alive_count_is_a_union_not_a_sum(tmp_path):
+    """routable_count and busy_count overlap: a runtime that refreshes its
+    heartbeat while executing is both `active` and holding a claim. The
+    2026-08-20 roster did exactly that and status read `routable=3 busy=3` on a
+    three-slot bus, so the documented `routable + busy` quorum counted six."""
+    _seed(tmp_path, {
+        "LWAR1": {"state": "on", "vendor_family": "openai", "age_s": 1.0},
+        "LWAR2": {"state": "on", "vendor_family": "google", "age_s": 1.0},
+        "LWAR3": {"state": "on", "vendor_family": "zai", "age_s": 1.0},
+    })
+    for lwar in ("LWAR1", "LWAR2", "LWAR3"):
+        _set_busy(tmp_path, lwar, "task-if-RUN-1-generate-%s-r0" % lwar, age_s=1.0)
+    report = _status(tmp_path)
+    assert report["routable_count"] == 3
+    assert report["busy_count"] == 3
+    assert report["alive_count"] == 3          # three slots, not six
+    assert report["needs_operator"] == []

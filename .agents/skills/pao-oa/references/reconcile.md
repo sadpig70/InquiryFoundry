@@ -63,8 +63,11 @@ python "<PAO_SKILL>/scripts/oa.py" status --startup-deadline 30
   `busy_count`. `needs_operator` applies the same busy fence as
   `expire_pending_control`: a slot whose heartbeat is `running` with a
   `current_task_id` is executing, not gone, and is never listed — the caution two
-  bullets down is why. **Quorum is `routable_count + busy_count`; a busy LWAR is
-  alive but not free. Check this before proposing work that needs a quorum.** An exit-notify LWAR
+  bullets down is why. `routable_count` is what is **free**; `busy_count` holds a
+  claim; the two **overlap**, because a runtime that refreshes its heartbeat while
+  executing is both. **Use `alive_count` for quorum — it is the union of the two.
+  Summing them double-counts.** Check it before proposing work that needs a
+  quorum. An exit-notify LWAR
   goes quiet whenever its session's turn ends — expected, and from the bus side
   indistinguishable from a closed session. OA cannot restart it and must not
   try; name the runtime and ask the operator to nudge it.
