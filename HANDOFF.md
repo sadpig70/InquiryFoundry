@@ -589,6 +589,58 @@ OP-MISSVAR(Q-0021)은 §7.9 에서 `DORMANT` 로 복구한 것들이라 선행 �
 - 계측학 군집은 5/9 → 3/9 로 줄었으나, **그 3건이 전부 LWAR2 의 복제본**이다.
   줄어든 것이 아니라 LWAR1·LWAR3 이 새 질문을 낸 덕이다.
 
+## 7.11 `review` 역할 — 추천은 하되 결정은 못 한다 (2026-08-21)
+
+Fable 5 를 **LWAR4(anthropic)** 로 붙여 리뷰어로 쓴다. 생성 로스터(LWAR1/2/3)에는
+넣지 않으며, `request_review` 가 **런의 일부라도 생성한 LWAR 의 리뷰를 거부**한다.
+
+### 가드는 관행이 아니라 코드에 있다
+
+`assert_transition` 은 `ADOPTED` 에 `actor="human"` 을 요구하지만 `close_review` 가
+그것을 무조건 넘긴다 — 즉 **`review.yaml` 을 채우는 쪽이 정직하다는 가정**이었다.
+리뷰어 LWAR 을 붙이면 그 가정이 하중을 받으므로, 가드를 강제 가능한 곳으로 옮겼다:
+
+- `apply_recommendation` 은 모든 판정과 사유를 채우되 **`reviewer` 를 비워 둔다**
+- `preflight_close` 가 `reviewer` 없는 런을 거부한다 → **사람이 `ratify` 하기 전에는 마감 불가**
+- 이 보장은 **리뷰어의 정직성에 의존하지 않는다** (`tests/if/test_review_role.py`)
+
+되먹임 추적: `review.yaml` 의 `reviewer_kind`/`recommended_by`,
+`decisions.jsonl` 각 행의 `decided_by`, `report.yaml` 의 `reviewer_kind`.
+거부 사유는 다음 런의 `avoid_patterns` 가 되므로 **기계가 쓴 것과 사람이 쓴 것이
+사후에 구별되어야 한다.**
+
+리뷰어 패킷은 **출처가 없다** — 벤더·연산자·기계 점수 없음. `open_review` 가 이미
+그것들을 `review.yaml` 에 못 넣게 하는 것과 같은 이유다. 반론은 판정 결과와 함께 넣는다:
+이미 적중한 공격은 저자가 아니라 질문에 대한 증거다.
+
+### 검증 — live6 재판정, 일치 7/9
+
+정욱님이 이미 판정한 live6 을 `--no-apply` 로 Fable 에게 다시 물었다
+(패킷에 선행 판정·사유는 들어가지 않는다. 확인함).
+
+| QID | 사람 | Fable |
+|---|---|---|
+| 0010 0011 0012 0014 | reject | reject |
+| 0015 0016 0017 | adopt | adopt |
+| **0013** | **defer** | **adopt** |
+| **0018** | **reject** | **defer** |
+
+**문헌 대조는 완전히 일치했다.** "이미 답이 나옴"(Muennighoff/Sardana/Porian) 계열 3건과
+전제 오류 2건 모두 같은 판정이 나왔다.
+
+불일치 2건의 성격이 다르다:
+
+- **0013 은 자원 상대성이다.** 사람은 *"클러스터 접근권이 확인되면 재판정"*,
+  Fable 은 *"접근 가능한 규모의 프로파일링으로 실행 가능"*. **Fable 은 우리 자원을 모른다.**
+  live6 브리프에는 `constraints` 가 없었고(§7.8 은 live7 부터), 패킷에도 넣지 않았다.
+  **이것은 Fable 의 실패가 아니라 패킷의 누락이다.**
+- **0018 은 사실상 같은 진단이다.** 사람은 *"손실함수·위험태도를 명시적으로 도입해야
+  비자명해진다"*, Fable 은 *"목적함수를 사전 등록으로 고정해 재정식화 후 재상정"*.
+  **결함을 같이 봤고 처분만 갈렸다**(버릴 것인가 고쳐 쓸 것인가).
+
+경향: Fable 은 두 건 모두 **한 칸씩 관대**하다(reject→defer, defer→adopt).
+채택률만 보고 위임하면 이 편향이 누적된다.
+
 ## 8. 다음 작업 (우선순위)
 
 1. **새 로스터 등록 대기** — Codex / Antigravity / Grok. OA는 LWAR를 띄울 수 없다.
