@@ -148,6 +148,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260820-live7b` | **완주(손상)**, `human=awaiting_human` (2026-08-20). 브리프 `constraints` 3건을 처음 투입한 런. seed 9 / qo 9 / **scored 5**, `protocol_valid` true 이나 `slo_scored_ge_8` false — GLM 크레딧 소진으로 judge 1건 타임아웃. 제약 효과: 자원 초과 설계 9/9 해소, 기각 조건 9/9 등가 마진(§7.10). 판정 못 받은 4건은 `DORMANT` 로 복구(§7.9). 검토 대상 **5문항**, 자료 `_workspace/if-live7/review-brief.md` |
 | `RUN-20260820-live6` | **종결** (2026-08-20). 코퍼스 확장 후 첫 런. seed 9 / qo 9 / scored 9, `protocol_valid` true, 9/9 succeeded, 이탈 0. 근거 18건 중 신규 후속 문헌이 12건. `decided: {adopt 3, reject 5, defer 1}` — **live3c 이후 첫 채택**이고 live5b 의 9/9 거부에서 크게 개선됐다. 채택 Q-0015/0016/0017, 유보 Q-0013. 효과·남은 패턴·리뷰어 관측은 §7.8 |
 | `RUN-20260820-live5b` | **종결** (2026-08-20). 새 로스터(codex/openai, antigravity/google, opencode/zai)로 **첫 시도 완주**, 이탈 0. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, 9/9 succeeded. 인간 리뷰 결과 `decided: {adopt 0, reject 9, defer 0}` — **9건 전부 거부**. 사유는 전부 구체적 문헌 근거를 동반한다. 원인은 개별 질문이 아니라 코퍼스 구조다(§7.7) |
 | `RUN-20260819-live5` | **실패** — `BLOCKED: protocol_incomplete` (2026-08-19). 과학적 실패가 아니라 인프라 실패다. LWAR5가 `generate` claim을 쥔 채 05:33에, LWAR4가 `judge` claim을 쥔 채 06:03에 침묵했다(턴 소진). 두 태스크는 리스 만료 후 dead-letter 됐고, 반론 없는 seed가 남아 compose가 막혔다. LWAR6(xai)만 3단계 완주. **측정 3(전 슬롯 7건 전량)은 라이브 `allocation.yaml`로 확정**, 측정 1·2는 질문이 확정되지 않아 답할 수 없다 — 특히 live4b에서 재발 2건을 만든 LWAR5가 아무것도 내지 못했다. 잔해는 `recover --delivery-timeout` 2회로 정리(dead-letter 4건, requeue 금지) |
@@ -492,6 +493,39 @@ live6 에는 그 유형이 **0건**이다. 대신 실행 가능성(3건)과 전�
 
 브리프 작성자가 이 둘로 생성을 제어할 수 있다고 착각하기 쉽다.
 `EXCLUDE_FAMILIES` 가 선언만 되고 강제되지 않던 것과 같은 유형이다. 아직 고치지 않았다.
+
+## 7.9 인프라 실패를 품질 판정으로 바꾸지 않기 (2026-08-20~21)
+
+`RUN-20260820-live7b` 는 판정 중 GLM 크레딧이 소진되어 judge 하나가 타임아웃됐다.
+`compose` 는 판정 카드 부재를 판정자가 내린 `GATE_FAIL` 과 같이 취급했으므로
+**멀쩡한 질문 4건이 `REJECTED` 로 확정됐다.** 인프라 실패가 품질 판정의 옷을 입은 것이다.
+
+- `missing_card` 는 이제 판정자의 `GATE_FAIL` 과 분리되어 **`DORMANT`** 로 간다(커밋 `a6ef95b`).
+  `DORMANT → SCORED` 가 합법이라 회수 가능하다. 판정자가 실제로 낸 `GATE_FAIL` 과
+  기계 게이트 실패는 그대로 `REJECTED` 다 — 그것은 질문에 대한 실제 증거다.
+- `report` 에 **`unjudged`** 추가. 이런 런에서도 `protocol_valid` 는 참으로 남는다
+  (프로토콜은 지켜졌고 런타임이 죽었을 뿐이다). 그래서 이 필드가 없으면
+  3분의 1을 잃은 런이 헤드라인만으로는 멀쩡해 보인다. `slo_scored_ge_8` 만이 신호였다.
+- live7b 의 4건(Q-0019/0021/0022/0024)은 `REJECTED → DORMANT` 로 복구했다.
+  복구 전에 **기계 게이트 통과 + 점수 없음**을 확인했다 — 카드 부재로 죽었다는 서명이다.
+
+### 파생 결함 — `DORMANT` 는 판정 대기가 아니다 (커밋 `c4a4d63`)
+
+`open_review` 가 `DORMANT` 질문을 `pending` 판정 카드로 올리는데
+**`DORMANT → REVIEWED` 는 불법 전이**라, 그런 질문을 가진 런은 마감이 불가능해진다.
+위 변경 이전에도 `normative`/`meta` 질문이 반론에서 상처를 입으면 같은 경로로 깨졌다 —
+잠재 결함이었고 위 변경이 흔한 경로로 만들었다.
+
+`DORMANT` 는 **보류**다. 판정받은 적 없는 질문의 다음 단계는 재판정이고,
+클래스가 범위 밖인 질문은 인간이 정할 것이 없다. 판정 카드에서 빼되
+`dissent_portfolio` 에는 남긴다 — `preflight_close` 가 실제로 요구하는 것은 그쪽이다.
+
+### 리뷰 자료 생성 시 주의 — 벤더는 런의 `allocation.yaml` 에서 읽어라
+
+슬롯 번호는 재사용된다. GLM 은퇴 후 Grok 이 LWAR3 을 받았으므로,
+**현재 레지스트리로 과거 런의 벤더를 표기하면 틀린다** (live7b 의 `zai` 산출물이
+`xai` 로 찍혔다). 런 디렉터리의 `allocation.yaml` 이 당시 슬롯별 `vendor_family` 를
+기록하고 있으니 그것이 정답이다.
 
 ## 8. 다음 작업 (우선순위)
 
