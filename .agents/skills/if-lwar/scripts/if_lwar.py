@@ -82,6 +82,10 @@ def main() -> int:
             out = cross_examine(inbox)
         elif args.role == "judge":
             out = judge(inbox)
+        elif args.role == "review":
+            print("review has no stub: a recommendation must be reasoned",
+                  file=sys.stderr)
+            return 2
         else:
             print("unknown role", file=sys.stderr)
             return 2

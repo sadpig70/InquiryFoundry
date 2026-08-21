@@ -10,7 +10,8 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from if_core.cycle import close_run, inquiry_cycle  # noqa: E402
-from if_core.store import Blocked  # noqa: E402
+from if_core.review import apply_recommendation, ratify, review_packet  # noqa: E402
+from if_core.store import Blocked, Store  # noqa: E402
 
 
 def parse_lwars(s: str) -> list[dict]:
@@ -35,6 +36,19 @@ def main() -> int:
     close = sub.add_parser("close")
     close.add_argument("--run", required=True)
     close.add_argument("--if-root")
+    packet = sub.add_parser("review-packet", help="write the reviewer's inbox for a run")
+    packet.add_argument("--run", required=True)
+    packet.add_argument("--if-root")
+    packet.add_argument("--out", required=True)
+    rec = sub.add_parser("recommend", help="fold a reviewer outbox into review.yaml")
+    rec.add_argument("--run", required=True)
+    rec.add_argument("--if-root")
+    rec.add_argument("--outbox", required=True)
+    rec.add_argument("--by", required=True, help="which reviewer produced it")
+    rat = sub.add_parser("ratify", help="a person takes ownership of a recommendation")
+    rat.add_argument("--run", required=True)
+    rat.add_argument("--if-root")
+    rat.add_argument("--reviewer", required=True)
     args = p.parse_args()
     try:
         if args.cmd == "run":
@@ -48,6 +62,27 @@ def main() -> int:
             )
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 0 if report.get("seed_count", 0) > 0 else 1
+        store = Store(args.if_root)
+        run_dir = store.root / "runs" / args.run
+        if args.cmd == "review-packet":
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            packet = review_packet(store, run_dir)
+            out.write_text(
+                yaml.safe_dump(packet, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            print(json.dumps({"wrote": str(out), "questions": len(packet["questions"])},
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.cmd == "recommend":
+            outbox = yaml.safe_load(Path(args.outbox).read_text(encoding="utf-8"))
+            print(json.dumps(apply_recommendation(run_dir, outbox, args.by),
+                             ensure_ascii=False, indent=2))
+            return 0
+        if args.cmd == "ratify":
+            print(json.dumps(ratify(run_dir, args.reviewer), ensure_ascii=False, indent=2))
+            return 0
         report = close_run(args.if_root, args.run)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0

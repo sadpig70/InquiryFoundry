@@ -14,6 +14,7 @@ from .const import (
     OPERATOR_IDS,
     Q_STATUSES,
     QUESTION_CLASSES,
+    REVIEWER_KINDS,
     RUN_MODES,
     UNKNOWN_TYPES,
 )
@@ -230,6 +231,30 @@ SCHEMAS: dict[str, dict] = {
             "notes": _str(),
         },
     },
+    "review_outbox": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["run_id", "recommendations"],
+        "properties": {
+            "run_id": _str(),
+            "recommendations": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["question_id", "decision", "reason"],
+                    "properties": {
+                        "question_id": _str(),
+                        "decision": {"enum": ["adopt", "reject", "defer"]},
+                        "reason": _str(),
+                        "informational": {"type": "boolean"},
+                        "checks": {"type": "object"},
+                    },
+                },
+            },
+        },
+    },
     "review": {
         "type": "object",
         "additionalProperties": False,
@@ -237,6 +262,11 @@ SCHEMAS: dict[str, dict] = {
         "properties": {
             "run_id": _str(),
             "reviewer": _str(),
+            # Who produced the decisions below. Absent means a person wrote
+            # them directly; `machine_recommended` means a reviewer LWAR did and
+            # nobody has ratified yet.
+            "reviewer_kind": {"enum": REVIEWER_KINDS},
+            "recommended_by": _str(),
             "portfolio": {"type": "array", "items": _str()},
             "all_scored": {"type": "array", "items": _str()},
             "dissent_portfolio": {"type": "array", "items": _str()},
@@ -290,6 +320,10 @@ SCHEMAS: dict[str, dict] = {
             "domain": _str(),
             "run_id": _str(),
             "informational": {"type": "boolean"},
+            # Provenance of this reason. It feeds the next run's avoid_patterns,
+            # so a machine-written reason must stay distinguishable from a
+            # human's after the fact.
+            "decided_by": {"enum": REVIEWER_KINDS},
         },
     },
     "edges_rec": {

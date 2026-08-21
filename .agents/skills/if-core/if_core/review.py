@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from .const import PARETO_AXES
+from .schema import validate_obj
 from .store import Blocked, Store, atomic_write_yaml, load_yaml, now_iso
 
 
@@ -107,10 +108,102 @@ def preflight_close(store: Store, doc: dict, report: dict) -> None:
         raise Blocked("dissent_not_referenced")
 
 
+REVIEW_FIELDS = (
+    "question", "question_class", "why_matters", "assumptions", "unknowns",
+    "evidence", "falsifier", "minimal_test", "action_plan",
+)
+
+
+def review_packet(store: Store, run_dir: Path) -> dict:
+    """What a reviewer LWAR is given: the case, with the provenance removed.
+
+    `open_review` already refuses to let scores or `generated_by` into
+    review.yaml, and a reviewer gets the same treatment — no vendor, no
+    operator, no machine ranking. Those say who wrote a question and how the
+    pipeline ranked it, which is exactly what an independent judgement must not
+    lean on. The dissent is included with its verdicts, because an attack that
+    already landed is evidence about the question rather than about its author.
+    """
+    doc = load_yaml(run_dir / "review.yaml")
+    items = []
+    for d in doc["decisions"]:
+        q = store.load_question(d["question_id"]) or {}
+        item = {"question_id": d["question_id"]}
+        for key in REVIEW_FIELDS:
+            if q.get(key):
+                item[key] = q[key]
+        item["dissent"] = [
+            {"dtype": a.get("dtype"), "result": a.get("result"),
+             "attack": a.get("attack"), "rationale": a.get("rationale")}
+            for a in (q.get("dissent") or [])
+        ]
+        items.append(item)
+    return {"run_id": doc["run_id"], "questions": items}
+
+
+def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> dict:
+    """Fold a reviewer LWAR's recommendation into review.yaml.
+
+    `reviewer` is deliberately left empty. `preflight_close` refuses a run
+    without one, so a recommendation cannot close anything until a person puts
+    their name on it — that is the whole guard, and it is why this does not
+    simply write `reviewer` itself.
+    """
+    validate_obj("review_outbox", outbox)
+    doc = load_yaml(run_dir / "review.yaml")
+    if outbox["run_id"] != doc["run_id"]:
+        raise Blocked("recommendation is for %s, not %s"
+                      % (outbox["run_id"], doc["run_id"]))
+    by_id = {r["question_id"]: r for r in outbox["recommendations"]}
+    missing = [d["question_id"] for d in doc["decisions"]
+               if not d.get("informational") and d["question_id"] not in by_id]
+    if missing:
+        raise Blocked("no recommendation for: %s" % ", ".join(missing))
+    applied = 0
+    for d in doc["decisions"]:
+        rec = by_id.get(d["question_id"])
+        if rec is None or d.get("informational"):
+            continue
+        if not (rec.get("reason") or "").strip():
+            raise Blocked("empty reason for %s" % d["question_id"])
+        d["decision"] = rec["decision"]
+        d["reason"] = rec["reason"]
+        d["informational"] = bool(rec.get("informational", False))
+        if rec.get("checks"):
+            d["checks"] = rec["checks"]
+        applied += 1
+    doc["reviewer_kind"] = "machine_recommended"
+    doc["recommended_by"] = recommended_by
+    doc["reviewer"] = ""
+    validate_obj("review", doc)
+    atomic_write_yaml(run_dir / "review.yaml", doc)
+    return {"status": "recommended", "applied": applied,
+            "recommended_by": recommended_by, "awaiting": "human ratification"}
+
+
+def ratify(run_dir: Path, reviewer: str) -> dict:
+    """A person takes ownership of a machine recommendation."""
+    reviewer = (reviewer or "").strip()
+    if not reviewer:
+        raise Blocked("reviewer required")
+    doc = load_yaml(run_dir / "review.yaml")
+    if doc.get("reviewer_kind") == "machine_recommended":
+        doc["reviewer_kind"] = "human_ratified"
+    doc["reviewer"] = reviewer
+    validate_obj("review", doc)
+    atomic_write_yaml(run_dir / "review.yaml", doc)
+    return {"status": "ratified", "reviewer": reviewer,
+            "reviewer_kind": doc.get("reviewer_kind")}
+
+
 def close_review(store: Store, run_dir: Path) -> dict:
     doc = load_yaml(run_dir / "review.yaml")
     report = load_yaml(run_dir / "report.yaml") or {}
     preflight_close(store, doc, report)
+    # Stamped on every decision record: a reason feeds the next run's
+    # avoid_patterns, so a machine-written one must stay distinguishable from a
+    # human's after the fact.
+    decided_by = doc.get("reviewer_kind") or "human"
     decided = {"adopt": 0, "reject": 0, "defer": 0}
     for d in doc["decisions"]:
         q = store.load_question(d["question_id"])
@@ -120,6 +213,7 @@ def close_review(store: Store, run_dir: Path) -> dict:
                 "ts": now_iso(), "question_id": d["question_id"],
                 "decision": "reject", "reason": d.get("reason") or "mechanical_rejected",
                 "domain": domain, "run_id": doc["run_id"], "informational": True,
+                "decided_by": decided_by,
             })
             decided["reject"] += 1
             continue
@@ -143,9 +237,11 @@ def close_review(store: Store, run_dir: Path) -> dict:
             "ts": now_iso(), "question_id": d["question_id"],
             "decision": d["decision"], "reason": d["reason"],
             "domain": domain, "run_id": doc["run_id"], "informational": False,
+            "decided_by": decided_by,
         })
         decided[d["decision"]] += 1
     report["human"] = "closed"
+    report["reviewer_kind"] = decided_by
     report["dissent_referenced"] = True
     report["decided"] = decided
     atomic_write_yaml(run_dir / "report.yaml", report)

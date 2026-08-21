@@ -29,8 +29,13 @@ Q_STATUSES = [
 ]
 DISSENT_TYPES = ["evidence", "logic", "premise", "alternative", "stakeholder", "execution"]
 ATTACK_RESULTS = ["miss", "wound", "kill"]
-ROLES = ["generate", "contrarian", "judge"]
-PHASES = {"generate": "EXPLORE", "contrarian": "EXPLOIT", "judge": "EXPLOIT"}
+ROLES = ["generate", "contrarian", "judge", "review"]
+PHASES = {"generate": "EXPLORE", "contrarian": "EXPLOIT", "judge": "EXPLOIT",
+          "review": "REVIEW"}
+# A reviewer recommends; it never decides. `close` still refuses a review.yaml
+# with an empty `reviewer`, so a machine recommendation cannot close a run —
+# a person has to put their name on it. See REVIEWER_KINDS.
+REVIEWER_KINDS = ["human", "machine_recommended", "human_ratified"]
 RUN_MODES = ["normal", "ablation"]
 GOALS = ["discovery", "validation", "strategy", "risk", "invention"]
 METHODS = ["observe", "experiment", "data", "simulation"]

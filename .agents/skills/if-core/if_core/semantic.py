@@ -22,6 +22,30 @@ def _blob(item: dict) -> str:
 
 
 def assert_role_output(role: str, items, *, allow_stub: bool) -> None:
+    if role == "review":
+        # A reviewer answers about the whole run at once, so its outbox is a
+        # mapping, not the per-item list the other roles return.
+        if not isinstance(items, dict):
+            raise SemanticError("review outbox must be a YAML mapping")
+        recs = items.get("recommendations")
+        if not isinstance(recs, list) or not recs:
+            raise SemanticError("review outbox has no recommendations")
+        if allow_stub:
+            return
+        for i, rec in enumerate(recs):
+            if not isinstance(rec, dict):
+                raise SemanticError(f"review[{i}] not an object")
+            reason = str(rec.get("reason") or "")
+            text = f"{reason} {rec.get('question_id') or ''}"
+            if any(m in text.lower() for m in STUB_MARKERS):
+                raise SemanticError(f"review[{i}] contains stub marker")
+            if PLACEHOLDER_RE.search(text):
+                raise SemanticError(f"review[{i}] contains placeholder")
+            # A verdict with no argument is the failure mode that matters here:
+            # the reason becomes the next run's avoid_pattern.
+            if rec.get("decision") in {"reject", "defer"} and len(reason.strip()) < 20:
+                raise SemanticError(f"review[{i}] {rec.get('decision')} without a reason")
+        return
     if not isinstance(items, list):
         raise SemanticError(f"{role} outbox must be a YAML list")
     if len(items) == 0:
