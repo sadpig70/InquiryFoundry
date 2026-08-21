@@ -148,6 +148,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260821-live8` | **완주**, `human=awaiting_human` (2026-08-21). 로스터 codex/openai · antigravity/google · **grok/xai**(신규). seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds` 0, `unjudged` 0 — 손실 없는 첫 런. 제약 효과 재현(자원 초과 0건, 등가 마진 9/9). **LWAR2 가 live7b 문항 3건을 유사도 1.00 으로 재생성** — `--pao` 경로에 중복 억제가 없다(§7.10). 자료 `_workspace/if-live8/review-brief.md` |
 | `RUN-20260820-live7b` | **완주(손상)**, `human=awaiting_human` (2026-08-20). 브리프 `constraints` 3건을 처음 투입한 런. seed 9 / qo 9 / **scored 5**, `protocol_valid` true 이나 `slo_scored_ge_8` false — GLM 크레딧 소진으로 judge 1건 타임아웃. 제약 효과: 자원 초과 설계 9/9 해소, 기각 조건 9/9 등가 마진(§7.10). 판정 못 받은 4건은 `DORMANT` 로 복구(§7.9). 검토 대상 **5문항**, 자료 `_workspace/if-live7/review-brief.md` |
 | `RUN-20260820-live6` | **종결** (2026-08-20). 코퍼스 확장 후 첫 런. seed 9 / qo 9 / scored 9, `protocol_valid` true, 9/9 succeeded, 이탈 0. 근거 18건 중 신규 후속 문헌이 12건. `decided: {adopt 3, reject 5, defer 1}` — **live3c 이후 첫 채택**이고 live5b 의 9/9 거부에서 크게 개선됐다. 채택 Q-0015/0016/0017, 유보 Q-0013. 효과·남은 패턴·리뷰어 관측은 §7.8 |
 | `RUN-20260820-live5b` | **종결** (2026-08-20). 새 로스터(codex/openai, antigravity/google, opencode/zai)로 **첫 시도 완주**, 이탈 0. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid` true, `separation: full`, 9/9 succeeded. 인간 리뷰 결과 `decided: {adopt 0, reject 9, defer 0}` — **9건 전부 거부**. 사유는 전부 구체적 문헌 근거를 동반한다. 원인은 개별 질문이 아니라 코퍼스 구조다(§7.7) |
@@ -526,6 +527,47 @@ live6 에는 그 유형이 **0건**이다. 대신 실행 가능성(3건)과 전�
 **현재 레지스트리로 과거 런의 벤더를 표기하면 틀린다** (live7b 의 `zai` 산출물이
 `xai` 로 찍혔다). 런 디렉터리의 `allocation.yaml` 이 당시 슬롯별 `vendor_family` 를
 기록하고 있으니 그것이 정답이다.
+
+## 7.10 `--pao` 경로에는 중복 억제가 없다 (2026-08-21, live8에서 실측)
+
+live8 은 live7b 와 **완전히 같은 브리프**로 돌렸다(제약 3건 + 코퍼스 6편).
+바뀐 것은 LWAR3 벤더뿐이다(`zai` → `xai`, 크레딧 소진이 강제한 교체).
+
+연산자 슬롯별 자카드 유사도(live7b vs live8, `token_set` 기준):
+
+| LWAR | 연산자 | 유사도 |
+|---|---|---:|
+| LWAR1 openai | OP-BOUND / OP-CONTRA / OP-INVERT | 0.15 / 0.25 / 0.50 |
+| **LWAR2 google** | **OP-MISSVAR / OP-SCALE / OP-XDOM** | **1.00 / 1.00 / 1.00** |
+| LWAR3 xai(신규) | OP-CAUSAL / OP-CF / OP-MEASURE | 0.15 / 0.04 / 0.09 |
+
+**Antigravity 가 세 문항을 토큰 집합까지 동일하게 재생성했다.** 비슷한 것이 아니라 같다.
+
+원인은 둘이고 둘 다 우리 쪽이다.
+
+**(1) 생성기 입력이 완전히 동일했다.** live7b 를 마감하지 않아 회피 창이 그대로였고,
+브리프·제약·힌트도 같다. 결정적으로 `build_allocation` 은 `operators` 를
+**인덱스 순서로** 배정하므로 로스터 순서가 같으면 매 런 같은 연산자가 같은 슬롯에 간다.
+즉 결정적 런타임에게는 같은 입력이 주어졌고, 같은 답이 나온 것은 런타임의 결함이 아니다.
+
+**(2) 정규 경로에 중복 억제가 없다.** `prior_sets_for` / `diversity_ok` 는
+`explore_loop`(로컬 경로)에서만 호출된다. **`explore_loop_pao` 는 발행하고 받아서 그대로 쓴다**
+(`cycle.py:253-269`). live1 이후 모든 라이브 런이 이 경로였으므로,
+**중복 억제는 이 저장소에서 한 번도 작동한 적이 없다.**
+
+`inject_divergence` 도 있으나 런 **내부** 재시도용이고 런 **사이**에는 적용되지 않는다.
+
+부수 주의: `prior_sets_for` 는 `SCORED`/`ADOPTED` 만 읽는다. §7.9 에서 판정 못 받은 질문을
+`DORMANT` 로 옮겼으므로 그것들은 억제 대상에서 빠진다 — PAO 경로에서는 애초에 호출되지
+않으니 지금은 무해하지만, 억제를 켤 때 함께 결정해야 한다.
+
+### 제약(§7.8 `constraints`)의 효과는 재현됐다
+
+- **자원 초과 설계 0건** — live7b 에 이어 9/9. 전부 공개 데이터 또는 재현 가능한
+  20M~300M 그리드. 프론티어 규모 신규 학습이나 비공개 로그를 전제하는 질문이 없다.
+- **기각 조건 9/9 등가 마진** — 점등식 없음.
+- 계측학 군집은 5/9 → 3/9 로 줄었으나, **그 3건이 전부 LWAR2 의 복제본**이다.
+  줄어든 것이 아니라 LWAR1·LWAR3 이 새 질문을 낸 덕이다.
 
 ## 8. 다음 작업 (우선순위)
 
