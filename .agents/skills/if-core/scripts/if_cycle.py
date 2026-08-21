@@ -10,7 +10,12 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from if_core.cycle import close_run, inquiry_cycle  # noqa: E402
-from if_core.review import apply_recommendation, ratify, review_packet  # noqa: E402
+from if_core.review import (  # noqa: E402
+    apply_recommendation,
+    ratify,
+    request_review,
+    review_packet,
+)
 from if_core.store import Blocked, Store  # noqa: E402
 
 
@@ -45,6 +50,14 @@ def main() -> int:
     rec.add_argument("--if-root")
     rec.add_argument("--outbox", required=True)
     rec.add_argument("--by", required=True, help="which reviewer produced it")
+    ask = sub.add_parser("review-run", help="send a run to a reviewer LWAR and fold back its recommendation")
+    ask.add_argument("--run", required=True)
+    ask.add_argument("--if-root")
+    ask.add_argument("--lwar-id", required=True)
+    ask.add_argument("--by", required=True, help="which reviewer produced it")
+    ask.add_argument("--timeout-s", type=int, default=1200)
+    ask.add_argument("--no-apply", action="store_true",
+                     help="collect the recommendation without touching review.yaml")
     rat = sub.add_parser("ratify", help="a person takes ownership of a recommendation")
     rat.add_argument("--run", required=True)
     rat.add_argument("--if-root")
@@ -74,6 +87,12 @@ def main() -> int:
             )
             print(json.dumps({"wrote": str(out), "questions": len(packet["questions"])},
                              ensure_ascii=False, indent=2))
+            return 0
+        if args.cmd == "review-run":
+            print(json.dumps(
+                request_review(store, run_dir, args.lwar_id, args.by,
+                               args.timeout_s, apply=not args.no_apply),
+                ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "recommend":
             outbox = yaml.safe_load(Path(args.outbox).read_text(encoding="utf-8"))

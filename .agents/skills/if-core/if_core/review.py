@@ -141,6 +141,52 @@ def review_packet(store: Store, run_dir: Path) -> dict:
     return {"run_id": doc["run_id"], "questions": items}
 
 
+def request_review(store: Store, run_dir: Path, lwar_id: str,
+                   recommended_by: str, timeout_s: int = 1200,
+                   apply: bool = True) -> dict:
+    """Send one run to a reviewer LWAR and fold back what it recommends.
+
+    The reviewer must not be one of the runtimes that generated the run — the
+    independence is the whole point, and `cross_assign` already refuses to let a
+    runtime examine its own output in the contrarian and judge phases.
+    """
+    from .bus import publish_collect
+
+    doc = load_yaml(run_dir / "review.yaml")
+    generators = {
+        (store.load_question(d["question_id"]) or {})
+        .get("lineage", {}).get("generated_by")
+        for d in doc["decisions"]
+    }
+    if lwar_id in generators:
+        raise Blocked("%s generated part of this run and cannot review it" % lwar_id)
+
+    packet = review_packet(store, run_dir)
+    inbox = {
+        "schema": "if.task.v1",
+        "role": "review",
+        "run_id": packet["run_id"],
+        "lwar_id": lwar_id,
+        "phase": "REVIEW",
+        "questions": packet["questions"],
+    }
+    accepted, statuses = publish_collect(run_dir, "review", [(lwar_id, inbox)], timeout_s)
+    outbox = accepted.get(lwar_id)
+    if not outbox:
+        raise Blocked("no review returned (%s)" % ", ".join(statuses or ["no status"]))
+    if not apply:
+        # Calibration against a run a person already decided. Folding the
+        # recommendation in would overwrite their verdicts, and comparing the
+        # two is the entire point.
+        validate_obj("review_outbox", outbox)
+        return {"status": "collected", "applied": 0, "recommended_by": recommended_by,
+                "recommendations": outbox["recommendations"],
+                "observed_statuses": statuses}
+    result = apply_recommendation(run_dir, outbox, recommended_by)
+    result["observed_statuses"] = statuses
+    return result
+
+
 def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> dict:
     """Fold a reviewer LWAR's recommendation into review.yaml.
 

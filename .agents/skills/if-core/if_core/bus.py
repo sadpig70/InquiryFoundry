@@ -107,7 +107,8 @@ def make_pao_task(run_id: str, role: str, lwar: str, jail: Path,
     if role not in ROLES:
         raise ValueError(role)
     data_read = [str(jail)] if role == "generate" else [str(jail / "inbox")]
-    timeout = {"generate": 900, "contrarian": 900, "judge": 600}[role]
+    # A reviewer reads the whole run at once, so it gets the longest slice.
+    timeout = {"generate": 900, "contrarian": 900, "judge": 600, "review": 1200}[role]
     dispatcher = _skills_root() / "if-lwar" / "scripts" / "if_lwar.py"
     if stub:
         run_line = (
