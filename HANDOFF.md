@@ -148,6 +148,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260821-live9` | **완주**, `human=awaiting_human` (2026-08-21). 예산 조항을 뺀 `constraints` 로 돌린 첫 런. seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds`·`unjudged`·`repeat_seeds` 모두 0. **`OP-2ND`/`OP-REGIME`/`OP-ADV` 첫 등장**(연산자 회전). 핵심 지표 `OP-SCALE` 은 회전 때문에 배정되지 않아 측정 실패(§7.12). 자료 `_workspace/if-live9/review-brief.md` |
 | `RUN-20260821-live8` | **완주**, `human=awaiting_human` (2026-08-21). 로스터 codex/openai · antigravity/google · **grok/xai**(신규). seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds` 0, `unjudged` 0 — 손실 없는 첫 런. 제약 효과 재현(자원 초과 0건, 등가 마진 9/9). **LWAR2 가 live7b 문항 3건을 유사도 1.00 으로 재생성** — `--pao` 경로에 중복 억제가 없다(§7.10). 자료 `_workspace/if-live8/review-brief.md` |
 | `RUN-20260820-live7b` | **완주(손상)**, `human=awaiting_human` (2026-08-20). 브리프 `constraints` 3건을 처음 투입한 런. seed 9 / qo 9 / **scored 5**, `protocol_valid` true 이나 `slo_scored_ge_8` false — GLM 크레딧 소진으로 judge 1건 타임아웃. 제약 효과: 자원 초과 설계 9/9 해소, 기각 조건 9/9 등가 마진(§7.10). 판정 못 받은 4건은 `DORMANT` 로 복구(§7.9). 검토 대상 **5문항**, 자료 `_workspace/if-live7/review-brief.md` |
 | `RUN-20260820-live6` | **종결** (2026-08-20). 코퍼스 확장 후 첫 런. seed 9 / qo 9 / scored 9, `protocol_valid` true, 9/9 succeeded, 이탈 0. 근거 18건 중 신규 후속 문헌이 12건. `decided: {adopt 3, reject 5, defer 1}` — **live3c 이후 첫 채택**이고 live5b 의 9/9 거부에서 크게 개선됐다. 채택 Q-0015/0016/0017, 유보 Q-0013. 효과·남은 패턴·리뷰어 관측은 §7.8 |
@@ -675,6 +676,68 @@ Fable 5 를 **LWAR4(anthropic)** 로 붙여 리뷰어로 쓴다. 생성 로스�
 0 으로 고정해 두어, 같은 런의 두 번째 리뷰가 원장에 막혔다
 (`task already has a ledger entry`). 자동으로 다음 빈 라운드를 쓰도록 고쳤다.
 재리뷰는 정상적인 요구다 — 자원 범위가 바뀌거나 2차 의견이 필요할 때.
+
+## 7.12 IF 는 자기 예산을 몰라야 한다 (2026-08-21)
+
+**IF 의 목적은 질문 생산이다. 그 질문이 이 시스템에서 실행 가능한지는 독립적이어야 한다.**
+§7.8 의 `constraints` 는 이 선을 넘었고, 그 뒤 리뷰어에게까지 확장하려던 것을 철회했다.
+
+### 실행 가능성에는 두 가지가 섞여 있다
+
+- **(A) 누구도 못 하는 것 — 질문의 결함.** 반증 조건이 비공개 소유 데이터로만 판정되고
+  공개 대체물이 없으면, 그것은 검정이 아니라 소망이다. 게이트로 거르는 것이 맞다.
+- **(B) 우리가 못 하는 것 — 우리의 사정.** 다중 노드 클러스터가 없다는 것은
+  질문의 속성이 아니다. **`DEFERRED` 가 이미 이 자리다**(`DEFERRED → SCORED` 로 복귀 가능).
+
+### 오염의 증거
+
+`constraints` 는 브리프에 있으므로 **생성기에 전달된다.** 즉 (B)가 어떤 질문이 태어나는지를
+결정하고 있었다. 같은 `OP-SCALE` 슬롯의 변화:
+
+| 런 | 질문 |
+|---|---|
+| live6 (제약 없음) | Post-Chinchilla **>10^25 FLOPs** 영역에서 배치 확장·불안정성이 Chinchilla 비율을 파괴하는가 |
+| live8 (예산 제약) | **소형 재현 가능 스케일 10^18~10^20** 에서 Huber vs MSE 피팅 민감도 |
+
+**질문이 우리 예산에 맞춰 스스로 축소됐다.** 세상에 관한 질문이 우리 계산서에 관한 질문이 됐다.
+계측학 군집(live7b 9건 중 5건이 "회계를 바꾸면 지수가 불변인가")도 같은 현상이다 —
+재분석은 언제나 실행 가능하므로 제약 하에서 가장 안전한 선택지다.
+
+### 조치 — live9 브리프
+
+예산 조항을 제거하고, 남긴 셋은 모두 질문 자체의 속성이다:
+
+1. 반증 조건이 **원리적으로** 도달 가능할 것. **"규모나 비용의 크기 자체는 결함이 아니다"** 를
+   명시했다 — 금지를 빼는 것만으로는 축소 압력이 돌아오지 않는다.
+2. 변수가 조작적으로 정의될 것. **새 측정 절차를 정의하는 것은 허용**한다
+   (구 조항 "기존 문헌에 측정 절차가 확립된 것만" 은 과잉이었다. 근거였던 live5b 거부 3건은
+   전부 *미정의* 를 지적했지 *어렵다* 를 지적하지 않았다).
+3. 기각 조건은 등가 마진을 가진 연속량. 점등식은 **누구에게도** 판정 불가다.
+
+리뷰어에게 자원 재고를 주려던 계획은 철회했다. **Fable 은 우리 자원을 모르는 채로
+질문의 품질만 판정하고, `adopt` 중 지금 못 할 것을 사람이 `defer` 로 내린다.**
+live6 Q-0013 의 불일치(사람 defer / Fable adopt)는 결함이 아니라 이 분담이 작동한 모습이었다.
+
+### 측정 실패 — 자기 실험을 자기가 방해했다
+
+핵심 지표로 삼은 `OP-SCALE` 이 live9 에 배정되지 않았다. §7.10 의 연산자 회전이
+`brief_id` 로 오프셋을 돌리기 때문이다. **회전과 제약 제거를 같은 런에 넣은 것이 잘못이다** —
+live4b 에서 "교란 변수가 셋" 이라고 경고해 놓고 같은 실수를 반복했다.
+
+부수 소득은 있다: **`OP-2ND` / `OP-REGIME` / `OP-ADV` 가 처음 등장**했다. 회전이 의도대로
+질문 공간을 넓히고 있다.
+
+### 남은 통로 — 회피 창
+
+`constraints` 를 지워도 되먹임이 예산 압력을 우회로로 나른다. live9 회피 창 8건 중 2건:
+
+- *"비공개 소유 데이터다. 공개 대체 자료가 없다"* — **(A), 정당**
+- *"10^24–10^26 그리드는 격자점 하나가 수천만 달러급이라 프론티어 연구소 외부에서 실행 불가.
+  해당 내부 로그도 비공개"* — **(A)와 (B)가 한 문장에 섞여 있다**
+
+`query_avoid_patterns` 는 사유 텍스트를 그대로 나르며 둘을 구별하지 않는다.
+판정 시 `reason_kind`(`question_defect` / `our_capacity`)를 붙이고 전자만 회피 창에
+싣는 것이 해법이지만, 위 한 건은 운영자가 쓴 문장이라 **분류를 임의로 하지 않는다.**
 
 ## 8. 다음 작업 (우선순위)
 
