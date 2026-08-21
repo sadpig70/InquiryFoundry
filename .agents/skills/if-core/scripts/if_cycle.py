@@ -68,6 +68,8 @@ def main() -> int:
     rat.add_argument("--run", required=True)
     rat.add_argument("--if-root")
     rat.add_argument("--reviewer", required=True)
+    rat.add_argument("--delegated", action="store_true",
+                     help="a standing delegation signs this; the machine made the call")
     args = p.parse_args()
     try:
         if args.cmd == "run":
@@ -114,7 +116,8 @@ def main() -> int:
                              ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "ratify":
-            print(json.dumps(ratify(run_dir, args.reviewer), ensure_ascii=False, indent=2))
+            print(json.dumps(ratify(run_dir, args.reviewer, args.delegated),
+                             ensure_ascii=False, indent=2))
             return 0
         report = close_run(args.if_root, args.run)
         print(json.dumps(report, ensure_ascii=False, indent=2))

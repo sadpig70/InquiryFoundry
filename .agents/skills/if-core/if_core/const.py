@@ -35,7 +35,7 @@ PHASES = {"generate": "EXPLORE", "contrarian": "EXPLOIT", "judge": "EXPLOIT",
 # A reviewer recommends; it never decides. `close` still refuses a review.yaml
 # with an empty `reviewer`, so a machine recommendation cannot close a run —
 # a person has to put their name on it. See REVIEWER_KINDS.
-REVIEWER_KINDS = ["human", "machine_recommended", "human_ratified"]
+REVIEWER_KINDS = ["human", "machine_recommended", "human_ratified", "delegated"]
 # What a verdict is about. `question_defect` is a property of the question and
 # is fed forward as an avoid_pattern; `our_capacity` is a fact about this
 # installation — a cluster we do not own, a budget we do not have — and must

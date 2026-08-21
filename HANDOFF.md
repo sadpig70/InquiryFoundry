@@ -739,9 +739,52 @@ live4b 에서 "교란 변수가 셋" 이라고 경고해 놓고 같은 실수를
 판정 시 `reason_kind`(`question_defect` / `our_capacity`)를 붙이고 전자만 회피 창에
 싣는 것이 해법이지만, 위 한 건은 운영자가 쓴 문장이라 **분류를 임의로 하지 않는다.**
 
+## 7.13 상시 위임 — 채택 판정은 Fable 5 가 한다 (2026-08-21, 운영자 결정)
+
+**운영자 결정**: *"앞으로 질문에 대한 채택에 대한 나의 선택은 Fable 5의 선택으로 대신한다."*
+
+live6 재판정에서 일치 7/9, 사유를 9/9 새로 쓰고도 판정은 9/9 동일(재현성 확인),
+문헌 대조는 완전 일치했다(§7.11). 불일치 2건은 자원 상대성 1건과 같은 진단·다른 처분 1건이었다.
+
+### 기록은 사실대로 남는다
+
+`REVIEWER_KINDS` 에 **`delegated`** 를 추가했다. 셋을 구별한다:
+
+- `human_ratified` — 사람이 이 판정들을 **읽고** 서명했다
+- `delegated` — 사람이 **상시 위임을 승인**했고 기계가 이 건을 판정했다. 책임은 사람에게 있으나 읽지는 않았다
+- `human` — 사람이 직접 판정표를 채웠다
+
+둘을 같이 기록하면 **어느 판정을 사람이 실제로 봤는지**가 사라진다. 이 사유들이 다음 런의
+`avoid_patterns` 가 되므로, 질문 품질이 흔들릴 때 **위임 종결과 상관되는지**부터 물어야 한다.
+
+`ratify --delegated` 가 이 경로이고, `close_review` 가 `decided_by: delegated` 로 각 행에 남긴다.
+
+### 첫 적용 — 3개 런 23문항 (2026-08-21)
+
+| 런 | adopt | reject | reviewer_kind |
+|---|---:|---:|---|
+| live7b | 2 | 3 | delegated |
+| live8 | 3 | 6 | delegated |
+| live9 | 5 | 4 | delegated |
+
+`decisions.jsonl` 23행 전부 `decided_by: delegated`, `reason_kind: question_defect`.
+질문 상태: ADOPTED 10 / REJECTED 13 / DORMANT 4(live7b 미판정분, 재판정 대상).
+
+**회피 창이 처음으로 완전히 교체됐다** — 8건 전부 live7b~live9 의 `question_defect` 사유다.
+live5b·live6 의 낡은 신호가 빠졌고, 예산 사유(§7.12 의 혼재 1건 포함)도 함께 밀려났다.
+
+### 위임되지 않는 것
+
+`our_capacity` 판정은 구조적으로 Fable 이 내릴 수 없다 — 우리 자원을 모르기 때문이다(§7.12).
+따라서 **`ADOPTED` 는 "추구할 가치가 있다" 이지 "지금 실행한다" 가 아니다.**
+지금 못 할 것을 `DEFERRED` 로 내리는 판단은 운영자에게 남아 있으며, 하지 않아도 무해하다 —
+채택 목록에 당장 못 하는 질문이 섞일 뿐, 질문의 가치 판정은 오염되지 않는다.
+
 ## 8. 다음 작업 (우선순위)
 
-1. **새 로스터 등록 대기** — Codex / Antigravity / Grok. OA는 LWAR를 띄울 수 없다.
+1. **live7b 의 `DORMANT` 4건 재판정** — GLM 크레딧 소진으로 판정을 못 받은 질문들(§7.9).
+   로스터가 건강하므로 `DORMANT → SCORED` 로 되살릴 수 있다.
+2. **새 로스터 등록 대기** — Codex / Antigravity / Grok. OA는 LWAR를 띄울 수 없다.
    등록되면 `reconcile` → `status` 로 신고된 `vendor_family`/`adapter_id` 를 배제 정책과 대조할 것.
 2. **코퍼스 지평선 수리** — §7.7. `evidence_hints` 에 2023–2024 후속 문헌을 넣지 않으면
    다음 런도 같은 이유로 전멸한다. `G-GROUND` 가 힌트 밖 인용을 막으므로 브리프 수정이

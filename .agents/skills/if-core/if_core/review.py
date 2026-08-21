@@ -266,14 +266,25 @@ def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> di
             "recommended_by": recommended_by, "awaiting": "human ratification"}
 
 
-def ratify(run_dir: Path, reviewer: str) -> dict:
-    """A person takes ownership of a machine recommendation."""
+def ratify(run_dir: Path, reviewer: str, delegated: bool = False) -> dict:
+    """A person takes ownership of a machine recommendation.
+
+    Two ways to own one, and the log has to tell them apart. `human_ratified`
+    means a person read these verdicts and signed them. `delegated` means a
+    person authorised a standing delegation and the machine made this
+    particular call — still their responsibility, but they did not read it.
+
+    Recording both as the same thing would hide, precisely where it matters,
+    which verdicts a human actually looked at. These reasons feed the next
+    run's avoid_patterns, and if question quality drifts the first thing worth
+    asking is whether it tracks the delegated closes.
+    """
     reviewer = (reviewer or "").strip()
     if not reviewer:
         raise Blocked("reviewer required")
     doc = load_yaml(run_dir / "review.yaml")
     if doc.get("reviewer_kind") == "machine_recommended":
-        doc["reviewer_kind"] = "human_ratified"
+        doc["reviewer_kind"] = "delegated" if delegated else "human_ratified"
     doc["reviewer"] = reviewer
     validate_obj("review", doc)
     atomic_write_yaml(run_dir / "review.yaml", doc)

@@ -300,3 +300,18 @@ def test_an_unknown_reason_kind_is_refused():
                                 "reason_kind": "too_expensive"}]}
     with pytest.raises(SemanticError, match="reason_kind"):
         check("review", bad, allow_stub=False)
+
+
+def test_a_delegated_close_is_not_recorded_as_a_read_one(reviewed_run):
+    """A standing delegation is still the operator's responsibility, but they
+    did not read these verdicts. Logging both as `human_ratified` would hide,
+    exactly where it matters, which ones a person actually looked at — and
+    these reasons feed the next run's avoid_patterns."""
+    store, run_dir, qos = reviewed_run
+    apply_recommendation(run_dir, _outbox(qos), "fable-5")
+    out = ratify(run_dir, "Jung Wook Yang", delegated=True)
+    assert out["reviewer_kind"] == "delegated"
+
+    close_review(store, run_dir)
+    rows = _decision_rows(store)
+    assert rows and all(r["decided_by"] == "delegated" for r in rows)
