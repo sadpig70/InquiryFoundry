@@ -1,9 +1,69 @@
 # HANDOFF — InquiryFoundry
 
-세션 종료 시점: 2026-08-18 (OA = Claude Opus 5, 워크스페이스 `D:\InquiryFoundry`). 직전에 **하드 크래시** 1회 — §7.5.
+세션 종료 시점: 2026-08-21 (OA = Claude Opus 5, 워크스페이스 `D:\InquiryFoundry`).
 다음 세션은 이 파일을 먼저 읽고, 기본 역할은 **OA**다. 벤더 LWAR을 OA가 띄우지 않는다.
 
 호칭: 정욱님. 한국어 응답, 코드/경로/식별자는 English. 로컬 스킬만 (`.agents/skills`).
+
+**읽는 법.** §0 은 지금 유효한 정책이고 **반드시 읽는다.** §1–§6 은 현재 상태다.
+**§7 은 사고 기록이며 시간순이라, 뒤에서 앞을 뒤집는 절이 있다** — 필요할 때 참조하되,
+정책을 §7 에서 읽어 내지 말 것. 정책은 §0 에 있다.
+
+---
+
+## 0. 지금 유효한 정책
+
+### IF 는 자기 예산을 모른다 (§7.12)
+
+**IF 의 목적은 질문 생산이다. 그 질문을 우리가 실행할 수 있는지는 독립적이다.**
+실행 가능성에는 두 가지가 섞여 있고 섞으면 안 된다:
+
+| | 무엇인가 | 어디로 |
+|---|---|---|
+| **(A) 누구도 못 함** | 반증 조건이 비공개 소유 데이터로만 판정되고 공개 대체물이 없다 | 질문의 결함. 거부하고 회피 창에 싣는다 |
+| **(B) 우리가 못 함** | 그 클러스터를 우리가 안 가졌다 | 우리의 사정. **`DEFERRED`** 가 자리다(`DEFERRED → SCORED` 로 복귀) |
+
+- **브리프 `constraints` 에 예산·규모 제한을 넣지 말 것.** `constraints` 는 생성기에 전달되므로
+  (B)를 넣으면 **질문이 우리 지갑에 맞춰 축소된다** — 실측된 사고다(§7.12).
+  현재 유효한 3개 조항은 `_workspace/if-live9/brief.yaml` 이 기준이다.
+- **`reason_kind`** 가 (A)/(B)를 가른다. `query_avoid_patterns` 는 `question_defect` 만 읽는다.
+  `defer` 의 기본값은 `our_capacity`, 나머지는 `question_defect`.
+- **`ADOPTED` 는 "추구할 가치가 있다" 이지 "지금 실행한다" 가 아니다.**
+
+### 채택 판정은 Fable 5 에게 상시 위임돼 있다 (§7.13, 운영자 결정)
+
+- 리뷰어는 **LWAR4 (Fable 5, anthropic)**. **생성 로스터에 넣지 말 것** —
+  `request_review` 가 자기 산출물 리뷰를 거부한다.
+- 리뷰어 패킷에는 **출처가 없다** — 벤더·연산자·기계 점수·선행 판정 모두 제외.
+- **`ratify` 없이는 어떤 런도 마감되지 않는다.** `apply_recommendation` 이 `reviewer` 를
+  비워 두고 `preflight_close` 가 거부한다. 이 보장은 리뷰어의 정직성에 의존하지 않는다.
+- 위임 종결은 `ratify --delegated` 로 하고 `decided_by: delegated` 가 남는다.
+  **`human_ratified`(사람이 읽고 서명) 와 구별해서 기록할 것** — 질문 품질이 흔들릴 때
+  위임 종결과 상관되는지부터 물어야 한다.
+- **`our_capacity` 판정은 Fable 이 구조적으로 못 내린다**(우리 자원을 모른다).
+  채택분 중 지금 못 할 것을 `DEFERRED` 로 내리는 판단만 운영자에게 남는다.
+
+### 인프라 실패는 품질 판정이 아니다 (§7.9, §7.10)
+
+- 판정 카드 미도착 → **`DORMANT`**(회수 가능), 판정자의 `GATE_FAIL` → `REJECTED`.
+- 회수 경로: **`rejudge`** (judge 라운드만 재실행) → **`reopen`**(닫힌 런에 회수분 추가)
+  → `review-run` → `ratify` → `close`. `close` 는 기존 집계에 **더한다**.
+- 수신 검증이 있으므로 YAML 인용 오류 같은 것으로 **런 전체가 죽지 않는다**.
+  버려진 seed 는 `report.dropped_seeds`, 미판정은 `unjudged`, 반복은 `repeat_seeds` 에 남는다.
+
+### 명령 요약
+
+```bash
+if_cycle.py run --brief B --if-root .if --pao --lwars L1:v1,L2:v2,L3:v3
+if_cycle.py review-run --run R --if-root .if --lwar-id LWAR4 --by fable-5
+if_cycle.py ratify --run R --if-root .if --reviewer "Jung Wook Yang" --delegated
+if_cycle.py close --run R --if-root .if
+if_cycle.py rejudge --run R --if-root .if --lwars ...   # 판정 못 받은 질문 회수
+if_cycle.py reopen  --run R --if-root .if               # 닫힌 런에 회수분 추가
+```
+
+런 직전 로스터 확인은 **`oa.py status --busy-grace 960`** 로 하고,
+정족수는 **`alive_count`**(합집합)로 본다 — `routable_count + busy_count` 는 중복 계산이다.
 
 ---
 
@@ -47,29 +107,27 @@ Python: PATH의 `python`. Shell: Git Bash 또는 PS7 (`D:\Tools\PS7\7.6.4\pwsh.e
 ## 3. 버스 / 등록 (지금)
 
 - Bus: `D:\InquiryFoundry\.pao`
-- `registry_version`: **33**
-- 슬롯 **0개**. 2026-08-19에 로스터를 통째로 비웠다.
+- `registry_version`: **39**. 슬롯 **4개**, 전원 `active`.
 
-| 슬롯 | 처분 | 사유 |
-|---|---|---|
-| LWAR6 (xai) | `deregistered` — LWAR 주도 정규 은퇴 | Grok이 해지 요청. `on→draining→off→deregistered` 를 OA가 `reconcile` 로 단계 승인 |
-| LWAR1 (alibaba) | `retire-stale` | 28시간 고아. IF 배제 대상이라 되살려도 못 쓴다 |
-| LWAR5 (moonshot) | `retire-stale --abandoned-task-id` | 크레딧 소진 |
-| LWAR4 (deepseek) | `retire-stale --abandoned-task-id` | 운영자가 세션 종료 |
+| 슬롯 | gen | profile | 역할 |
+|---|---:|---|---|
+| LWAR1 | 4 | Codex / `codex` / `openai` | 생성 |
+| LWAR2 | 4 | Antigravity / `antigravity` / `google` | 생성 |
+| LWAR3 | 4 | Grok Build TUI / `grok_build` / `xai` | 생성 |
+| LWAR4 | 3 | Claude Code / `claude_code` / `anthropic` (Fable 5) | **리뷰어 — 생성 로스터에 넣지 말 것** |
 
-  LWAR4·LWAR5 는 **claim을 쥔 채 죽어** heartbeat가 `running` 으로 얼어붙은 상태였다.
-  일반 `--retire-stale` 은 `heartbeat_not_idle` 로 영구 거부한다 — §7.6 참조.
+  IF 런은 `--lwars LWAR1:openai,LWAR2:google,LWAR3:xai` 로 돌린다. 벤더 3종이라
+  `normal` 모드의 "2종 이상" 을 만족한다. 배제 정책(`EXCLUDE_FAMILIES={alibaba}`,
+  `EXCLUDE_ADAPTERS={qwen}`)에 걸리는 것은 없다.
 
-- **앞으로의 로스터: Codex / Antigravity / Grok.** 셋 다 `EXCLUDE_FAMILIES={alibaba}`,
-  `EXCLUDE_ADAPTERS={qwen}` 에 걸리지 않고 `vendor_family` 도 3종이라 `normal` 모드의
-  "2종 이상" 요건을 만족한다. `vendor_family`/`adapter_id` 는 스키마 enum이 아니라
-  **LWAR이 등록 시 자기 신고**하는 자유 문자열이므로, 등록 후 `status` 로 실제 신고값을
-  확인하고 배제 정책과 대조할 것.
-- 슬롯 배정은 `lowest_available`. tombstone 의 `reusable_after` 가 지난 번호부터 재사용되므로
-  새 런타임은 LWAR1 부터 순서대로 받는다.
+- **슬롯 번호는 재사용된다.** 지금까지 은퇴한 것: alibaba(고아), moonshot·zai(크레딧 소진),
+  deepseek(운영자 종료), xai(정규 해지 후 재등록). 과거 런의 벤더를 현재 레지스트리로
+  읽으면 틀린다 — 그 런의 `allocation.yaml` 이 기록이다.
+- **크레딧 소진이 두 번 일어났다**(moonshot, zai). 런 완주에 20~45분이 걸리고 그동안
+  3대가 살아 있어야 하므로, 세 번째도 온다고 보고 `rejudge`/`reopen` 경로를 유지할 것.
 - audit `healthy`, degraded/pending 0.
 
-다음 OA: 새 `PAO_OA_ID` mint → `doctor --role oa` → `presence` → `reconcile` → `status`.
+다음 OA: `PAO_OA_ID` mint(또는 직전 id 재사용) → `presence` → `reconcile` → `status`.
 writer lease / `.command.lock` 손삭제 금지.
 
 ---
@@ -414,6 +472,13 @@ live5b 사유 8건뿐이다. 1000배 스케일·물리 유비·모순 선결가�
 
 ## 7.8 코퍼스 수리와 그 효과 — live6 (2026-08-20)
 
+> **⚠ 이 절의 `constraints` 관련 결론은 §7.12 에서 뒤집혔다.**
+> 코퍼스 확장(`evidence_hints` 2편 → 6편)은 유효하고 지금도 그대로 쓴다.
+> 그러나 여기서 도입한 **브리프 `constraints` 의 예산·규모 조항은 오염이었다** —
+> 질문이 우리 지갑에 맞춰 축소됐고 §7.12 에서 제거했다.
+> **이 절만 읽고 "제약이 효과적이니 더 넣자" 고 판단하지 말 것.**
+
+
 §7.7 진단대로 `evidence_hints.papers` 를 2편 → **6편**으로 넓혔다.
 브리프는 `_workspace/`(git 제외)에 있으므로 **코퍼스 구성은 여기에만 기록된다:**
 
@@ -531,6 +596,10 @@ live6 에는 그 유형이 **0건**이다. 대신 실행 가능성(3건)과 전�
 
 ## 7.10 `--pao` 경로에는 중복 억제가 없다 (2026-08-21, live8에서 실측)
 
+> **⚠ 아래 "유사도 1.00 이 3건" 은 절 안에서 1건으로 정정된다.** 나머지 2건은 판정을 받은 적
+> 없는 `DORMANT` 재질문이라 정당했다. 절 끝의 "정정" 소절까지 읽을 것.
+
+
 live8 은 live7b 와 **완전히 같은 브리프**로 돌렸다(제약 3건 + 코퍼스 6편).
 바뀐 것은 LWAR3 벤더뿐이다(`zai` → `xai`, 크레딧 소진이 강제한 교체).
 
@@ -591,6 +660,10 @@ OP-MISSVAR(Q-0021)은 §7.9 에서 `DORMANT` 로 복구한 것들이라 선행 �
   줄어든 것이 아니라 LWAR1·LWAR3 이 새 질문을 낸 덕이다.
 
 ## 7.11 `review` 역할 — 추천은 하되 결정은 못 한다 (2026-08-21)
+
+> **⚠ 이 절이 세운 "자원 재고를 리뷰어에게 주면 일치율이 오른다" 가설은 반증됐고,
+> 계획 자체가 §7.12 에서 철회됐다.** 리뷰어는 우리 자원을 몰라야 한다.
+
 
 Fable 5 를 **LWAR4(anthropic)** 로 붙여 리뷰어로 쓴다. 생성 로스터(LWAR1/2/3)에는
 넣지 않으며, `request_review` 가 **런의 일부라도 생성한 LWAR 의 리뷰를 거부**한다.
@@ -782,17 +855,15 @@ live5b·live6 의 낡은 신호가 빠졌고, 예산 사유(§7.12 의 혼재 1�
 
 ## 8. 다음 작업 (우선순위)
 
-1. **live7b 의 `DORMANT` 4건 재판정** — GLM 크레딧 소진으로 판정을 못 받은 질문들(§7.9).
-   로스터가 건강하므로 `DORMANT → SCORED` 로 되살릴 수 있다.
-2. **새 로스터 등록 대기** — Codex / Antigravity / Grok. OA는 LWAR를 띄울 수 없다.
-   등록되면 `reconcile` → `status` 로 신고된 `vendor_family`/`adapter_id` 를 배제 정책과 대조할 것.
-2. **코퍼스 지평선 수리** — §7.7. `evidence_hints` 에 2023–2024 후속 문헌을 넣지 않으면
-   다음 런도 같은 이유로 전멸한다. `G-GROUND` 가 힌트 밖 인용을 막으므로 브리프 수정이
-   유일한 지렛대다.
-3. **회피 창 정책** — `n=8` 고정이라 대량 거부 한 번에 축적 신호가 전부 날아간다(§7.7).
-   창 확대, 도메인별 분리, 또는 함정 유형 요약 유지 중 택일이 필요하다.
-3. live2 `review.yaml` 인간 adopt — 기계 금지.
-4. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
+1. **다음 IF 런** — 브리프는 `_workspace/if-live9/brief.yaml` 을 본떠 `brief_id` 만 바꾼다.
+   예산 조항을 다시 넣지 말 것(§0). 런 → `review-run`(LWAR4) → `ratify --delegated` → `close`.
+2. **회피 창 정책** — `n=8` 고정이라 대량 거부 한 번에 축적 신호가 통째로 교체된다(§7.7, §7.13).
+   창 확대, 도메인별 분리, 함정 유형 요약 유지 중 택일이 필요하다. 아직 결정되지 않았다.
+3. **`OP-SCALE` 오염 제거 확인** — §7.12 의 측정이 실패했다. 연산자 회전이 `brief_id` 로
+   오프셋을 돌리므로, `OP-SCALE` 이 배정되는 `brief_id` 를 골라야 비교가 선다.
+   **변경을 한 번에 하나씩만 넣을 것** — 회전과 제약 제거를 같이 넣어 실험이 깨졌다.
+4. **live2 `review.yaml`** — 아직 열려 있다. 위임 경로로 처리 가능하다.
+5. 백로그: U11 D20 강제, U18 IfPhase2Roles — 아직 하지 않음.
 
 OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금지.
 
@@ -806,17 +877,25 @@ OA `sanitize-idle`(work/·죽은 pid 청소)은 **미구현**. 전권 wipe 금�
 - OA가 벤더 CLI에 직접 지시 붙여넣기
 - `lwar3_adp_loop.py` / `if_autorun.py`로 일반 PAO 태스크 처리
 - live1 동결 해제, Qwen 재투입
-- ADOPTED를 기계가 부여
-- **살아있는 LWAR3를 정리 대상으로 착각** — 검증된 워커다
+- **ADOPTED 를 사람의 위임 없이 기계가 부여** — 상시 위임은 §7.13 에서 운영자가 승인했다.
+  위임 경로는 `ratify --delegated` 뿐이고, `reviewer` 를 코드가 임의로 채우지 않는다
+- **슬롯 번호로 런타임을 식별** — 번호는 재사용된다. LWAR3 은 xai → zai → xai 로 바뀌었다.
+  과거 런의 벤더는 그 런의 `allocation.yaml` 에서 읽어라(§7.9)
+- **은퇴 전에 `collect --archive` 를 건너뛰기** — 배달된 결과가 `outgoing/` 에 남아
+  멀쩡한 슬롯이 `active_mailbox_work` 로 거부된다(§7.6, 은퇴 런북)
 
 ---
 
 ## 10. 다음 세션 부트스트랩
 
 ```text
-1. HANDOFF.md + AGENTS.md + CLAUDE.md
+1. HANDOFF §0 (지금 유효한 정책) + §1-§6 (현재 상태) + AGENTS.md + CLAUDE.md
+   §7 은 사고 기록이다. 처음부터 읽지 말고, 필요한 절만 §0 의 참조를 따라간다.
 2. 역할 OA → pao-oa SKILL.md
-3. doctor --role oa → PAO_OA_ID mint → presence → reconcile → status
+3. PAO_OA_ID mint(또는 직전 id 재사용) → presence → reconcile → status
 4. 스킬 작업이면 .pgf/DESIGN-PaoLwarV118.md 가 권위 (P1-P6 done)
 5. IF 작업이면 .pgf/DESIGN-InquiryFoundry.md 가 권위
 ```
+
+**IF 런을 돌리기 전 확인:** `oa.py status --busy-grace 960` 으로 `alive_count >= 3`,
+`needs_operator` 가 비어 있을 것. LWAR4(리뷰어)는 생성 로스터에 넣지 않는다.
