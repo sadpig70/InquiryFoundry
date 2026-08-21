@@ -28,6 +28,7 @@ class Run:
     nonce: bytes
     observed_statuses: list[str] = field(default_factory=list)
     dropped_seeds: list[dict] = field(default_factory=list)
+    repeat_seeds: list[dict] = field(default_factory=list)
 
 
 def init_run(store: Store, brief: dict) -> Run:
@@ -244,6 +245,7 @@ def fail_report(run: Run, reason: str) -> dict:
         "dissent_referenced": False,
         "slo_scored_ge_8": False,
         "dropped_seeds": run.dropped_seeds,
+        "repeat_seeds": run.repeat_seeds,
         "contributing_generate_lwars": 0,
         "observed_statuses": run.observed_statuses,
         "reason": reason,
@@ -267,7 +269,39 @@ def explore_loop_pao(store: Store, run: Run, alloc: dict, lwars: list, packs=Non
     timeout = int(run.brief.get("budget", {}).get("generate_timeout_s") or 900)
     accepted, statuses = publish_collect(run.dir, "generate", items, timeout)
     run.observed_statuses.extend(statuses)
-    return flatten_seeds(accepted, run.id, run.dropped_seeds)
+    seeds = flatten_seeds(accepted, run.id, run.dropped_seeds)
+    note_repeats(store, run, seeds)
+    return seeds
+
+
+def note_repeats(store: Store, run: Run, seeds: list) -> None:
+    """Record seeds that repeat an earlier question in this domain.
+
+    `diversity_ok` has always existed and is called only from `explore_loop`,
+    the local path. Every live run has used `--pao`, so nothing ever compared a
+    seed against earlier work: RUN-20260821-live8 repeated three of
+    RUN-20260820-live7b's questions at a token-set Jaccard of 1.00 and the
+    pipeline reported a clean run.
+
+    Recorded rather than dropped. A repeat is not malformed, dropping it would
+    shrink the run below its own protocol checks, and the operator reviewing
+    the run is the one who should decide what a repeat is worth. Prior sets
+    come from SCORED and ADOPTED only, so a question parked in DORMANT for want
+    of a judge does not suppress asking it again — it never got its answer.
+    """
+    prior = prior_sets_for(store, run.brief["domain"])
+    if not prior:
+        return
+    for s in seeds:
+        ts = token_set(s)
+        best = max((jaccard(ts, p) for p in prior), default=0.0)
+        if best > TH_PAIR:
+            run.repeat_seeds.append({
+                "local_id": s["local_id"],
+                "lwar_id": s["lineage"]["generated_by"],
+                "operator": s.get("operator"),
+                "max_prior_jaccard": round(best, 3),
+            })
 
 
 def exploit_loop_pao(run: Run, seeds: list, lwars: list, mode: str) -> tuple[dict, dict]:
@@ -429,6 +463,8 @@ def inquiry_cycle(brief: dict, lwars: list[dict], if_root=None, packs=None, pao:
         # headline field reads clean on a run that lost a third of its
         # judging, as RUN-20260820-live7b did.
         "unjudged": [s["local_id"] for s in seeds if s["local_id"] not in cards],
+        # Seeds that repeat an earlier SCORED/ADOPTED question in this domain.
+        "repeat_seeds": run.repeat_seeds,
     }
     atomic_write_yaml(run.dir / "report.yaml", report)
     return report

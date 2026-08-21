@@ -756,3 +756,85 @@ def test_dormant_questions_are_not_put_up_for_human_decision(tmp_path):
 
     assert [d["question_id"] for d in doc["decisions"]] == ["Q-1"]
     assert "Q-2" in doc["dissent_portfolio"]
+
+
+def test_operator_rotation_varies_by_run_and_stays_disjoint():
+    """Slot i always received operators i*k..i*k+k-1, so the same roster order
+    handed the same operator to the same vendor every run. RUN-20260821-live8
+    repeated RUN-20260820-live7b's brief and one runtime returned three
+    questions at a token-set Jaccard of 1.00 — byte-identical input, so not a
+    fault in the generator. Rotating by brief_id changes the input; every slot
+    shifts equally so the triples stay disjoint."""
+    from if_core.allocate import run_operator_offset
+
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
+    ]
+    base = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]}}
+    assignments = set()
+    for brief_id in ("RUN-A", "RUN-B", "RUN-C", "RUN-D", "RUN-E", "RUN-F"):
+        alloc = build_allocation({**base, "brief_id": brief_id}, lwars, None)
+        ops = [tuple(alloc[l]["operators"]) for l in ("LWAR1", "LWAR2", "LWAR3")]
+        flat = [o for triple in ops for o in triple]
+        assert len(set(flat)) == len(flat), brief_id   # still disjoint
+        assignments.add(tuple(ops))
+    assert len(assignments) > 1, "rotation produced one assignment for every run"
+
+    # Deterministic: the same brief_id must reproduce its run.
+    a = build_allocation({**base, "brief_id": "RUN-A"}, lwars, None)
+    b = build_allocation({**base, "brief_id": "RUN-A"}, lwars, None)
+    assert a["LWAR2"]["operators"] == b["LWAR2"]["operators"]
+    # A brief without an id keeps the original assignment.
+    assert run_operator_offset({}) == 0
+
+
+def _seed_a_prior_question(store, tmp_path, seed, run_id="RUN-PRIOR"):
+    """Write one SCORED question the way a real run does, via compose."""
+    from if_core.compose import compose
+
+    run_dir = tmp_path / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    dissent = {"verdict": "SURVIVED", "attacks": [], "local_id": seed["local_id"]}
+    card = {"verdict": "PASS", "scores": {
+        "impact": 0.8, "testability": 0.8, "grounding": 0.8, "actionability": 0.8}}
+    qos = compose(store, run_dir, run_id, [seed], {seed["local_id"]: dissent},
+                  {seed["local_id"]: card}, {"papers": ["papers/kaplan2020"]}, "normal")
+    assert qos[0]["status"] == "SCORED"
+    return qos[0]
+
+
+def test_repeat_seeds_are_recorded_not_dropped(tmp_path):
+    """diversity_ok is called only from the local path, so no live run ever
+    compared a seed against earlier work. A repeat is recorded — it is not
+    malformed, and dropping it would shrink the run below its own checks."""
+    from if_core.compose import stamp_lineage
+    from if_core.cycle import Run, note_repeats
+
+    store = Store(tmp_path)
+    _seed_a_prior_question(store, tmp_path, _compose_seed("LWAR1-09"))
+
+    run = Run(id="RUN-N", dir=tmp_path, brief={"domain": "scaling"}, nonce=b"x" * 32)
+    # Same text under a new local id: exactly the live8 repeat.
+    note_repeats(store, run, [stamp_lineage(_compose_seed("LWAR1-01"), "LWAR1", "RUN-N")])
+
+    assert len(run.repeat_seeds) == 1
+    assert run.repeat_seeds[0]["local_id"] == "LWAR1-01"
+    assert run.repeat_seeds[0]["max_prior_jaccard"] > 0.55
+
+
+def test_a_fresh_seed_is_not_flagged_as_a_repeat(tmp_path):
+    """The threshold must not fire on unrelated work."""
+    from if_core.compose import stamp_lineage
+    from if_core.cycle import Run, note_repeats
+
+    store = Store(tmp_path)
+    other = _compose_seed("LWAR1-09")
+    other["question"] = "what fraction of lifecycle energy goes to interconnect traffic?"
+    other["question_norm"] = "what fraction of lifecycle energy goes to interconnect traffic"
+    _seed_a_prior_question(store, tmp_path, other)
+
+    run = Run(id="RUN-N", dir=tmp_path, brief={"domain": "scaling"}, nonce=b"x" * 32)
+    note_repeats(store, run, [stamp_lineage(_compose_seed("LWAR1-01"), "LWAR1", "RUN-N")])
+    assert run.repeat_seeds == []

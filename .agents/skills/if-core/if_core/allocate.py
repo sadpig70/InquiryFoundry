@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from .const import EVIDENCE_KINDS, FAMILY_NORM, OBJECTIVES, OPERATORS
 from .store import Blocked
 
@@ -11,9 +13,29 @@ def vendor_family(lwar: dict) -> str:
     return FAMILY_NORM.get(str(raw).lower(), str(raw).lower())
 
 
-def default_ops_for(index: int, k: int = 3) -> list[str]:
+def default_ops_for(index: int, k: int = 3, offset: int = 0) -> list[str]:
     n = len(OPERATORS)
-    return [OPERATORS[(index * k + j) % n][0] for j in range(k)]
+    return [OPERATORS[(index * k + j + offset) % n][0] for j in range(k)]
+
+
+def run_operator_offset(brief: dict) -> int:
+    """Rotate which operators a slot receives, per run.
+
+    Slot i always got operators i*k..i*k+k-1, so the same roster order handed
+    the same operator to the same vendor in every run. RUN-20260821-live8
+    repeated RUN-20260820-live7b's brief and one runtime returned three
+    questions with a token-set Jaccard of 1.00 — a deterministic generator
+    given byte-identical input, which is not a fault in the generator.
+
+    Every slot shifts by the same amount, so the triples stay disjoint and the
+    heterogeneity key still holds. Derived from brief_id with a stable digest
+    (not hash(), which is salted per process), so a run is reproducible.
+    """
+    brief_id = str(brief.get("brief_id") or "")
+    if not brief_id:
+        return 0
+    digest = hashlib.sha256(brief_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") % len(OPERATORS)
 
 
 def leftover_ops(used_keys: set, family: str, ev: str, preferred: list | None = None) -> list[str] | None:
@@ -38,17 +60,18 @@ def build_allocation(brief: dict, lwars: list[dict], avoid: list[str] | None = N
         raise Blocked("need >= 2 vendor_family for normal mode")
     kinds = list(brief.get("evidence_hints") or {}) or list(EVIDENCE_KINDS)
     avoid = list(avoid or [])
+    offset = run_operator_offset(brief)
     table, used = {}, set()
     for i, lwar in enumerate(lwars):
         fam = vendor_family(lwar)
         ev = kinds[i % len(kinds)]
-        ops = default_ops_for(i, 3)
+        ops = default_ops_for(i, 3, offset)
         key = (fam, frozenset(ops), ev)
         if key in used:
             ops = leftover_ops(used, fam, ev, ops)
             if ops is None:
                 ev = kinds[(i + 1) % len(kinds)]
-                ops = leftover_ops(used, fam, ev, default_ops_for(i + 7, 3))
+                ops = leftover_ops(used, fam, ev, default_ops_for(i + 7, 3, offset))
             if ops is None:
                 raise Blocked("cannot satisfy heterogeneity key")
             key = (fam, frozenset(ops), ev)
