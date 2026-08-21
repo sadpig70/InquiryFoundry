@@ -114,8 +114,17 @@ REVIEW_FIELDS = (
 )
 
 
-def review_packet(store: Store, run_dir: Path) -> dict:
+def review_packet(store: Store, run_dir: Path,
+                  constraints: list[str] | None = None) -> dict:
     """What a reviewer LWAR is given: the case, with the provenance removed.
+
+    The run's `constraints` travel with it. Without them the reviewer judges
+    feasibility in the abstract while the generator was working inside a stated
+    envelope, and the two disagree for no better reason than that: calibrating
+    against RUN-20260820-live6, the only feasibility split was a question the
+    operator deferred for want of cluster access and the reviewer adopted as
+    "runnable at accessible scale". Pass `constraints` explicitly to re-review
+    an older run under an envelope its own brief never carried.
 
     `open_review` already refuses to let scores or `generated_by` into
     review.yaml, and a reviewer gets the same treatment — no vendor, no
@@ -125,6 +134,9 @@ def review_packet(store: Store, run_dir: Path) -> dict:
     already landed is evidence about the question rather than about its author.
     """
     doc = load_yaml(run_dir / "review.yaml")
+    if constraints is None:
+        brief = load_yaml(run_dir / "brief.yaml") or {}
+        constraints = list(brief.get("constraints") or [])
     items = []
     for d in doc["decisions"]:
         q = store.load_question(d["question_id"]) or {}
@@ -138,12 +150,12 @@ def review_packet(store: Store, run_dir: Path) -> dict:
             for a in (q.get("dissent") or [])
         ]
         items.append(item)
-    return {"run_id": doc["run_id"], "questions": items}
+    return {"run_id": doc["run_id"], "constraints": list(constraints), "questions": items}
 
 
 def request_review(store: Store, run_dir: Path, lwar_id: str,
                    recommended_by: str, timeout_s: int = 1200,
-                   apply: bool = True) -> dict:
+                   apply: bool = True, constraints: list[str] | None = None) -> dict:
     """Send one run to a reviewer LWAR and fold back what it recommends.
 
     The reviewer must not be one of the runtimes that generated the run — the
@@ -161,13 +173,14 @@ def request_review(store: Store, run_dir: Path, lwar_id: str,
     if lwar_id in generators:
         raise Blocked("%s generated part of this run and cannot review it" % lwar_id)
 
-    packet = review_packet(store, run_dir)
+    packet = review_packet(store, run_dir, constraints)
     inbox = {
         "schema": "if.task.v1",
         "role": "review",
         "run_id": packet["run_id"],
         "lwar_id": lwar_id,
         "phase": "REVIEW",
+        "constraints": packet["constraints"],
         "questions": packet["questions"],
     }
     accepted, statuses = publish_collect(run_dir, "review", [(lwar_id, inbox)], timeout_s)

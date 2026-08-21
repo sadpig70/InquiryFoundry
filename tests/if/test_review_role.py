@@ -187,3 +187,33 @@ def test_the_reviewer_packet_carries_no_provenance(reviewed_run):
         assert leak not in blob, leak
     assert packet["questions"][0]["question"]
     assert packet["questions"][0]["dissent"]
+
+
+def test_the_packet_carries_the_run_constraints(tmp_path, reviewed_run):
+    """Without them the reviewer judges feasibility in the abstract while the
+    generator worked inside a stated envelope. Calibrating on RUN-20260820-live6
+    the only feasibility split was exactly that: the operator deferred for want
+    of cluster access, the reviewer adopted as runnable at accessible scale."""
+    store, run_dir, _ = reviewed_run
+    rule = "실행 계획은 공개 획득 가능한 데이터와 재현 가능한 규모만 사용한다."
+    (run_dir / "brief.yaml").write_text(
+        yaml.safe_dump({"brief_id": "RUN-R", "constraints": [rule]}, allow_unicode=True),
+        encoding="utf-8")
+
+    assert review_packet(store, run_dir)["constraints"] == [rule]
+
+    # An explicit envelope overrides the run's own, for re-reviewing an older
+    # run under rules its brief never carried.
+    other = "비공개 프론티어 내부 로그를 전제하지 않는다."
+    assert review_packet(store, run_dir, [other])["constraints"] == [other]
+
+    # Still no provenance.
+    blob = yaml.safe_dump(review_packet(store, run_dir), allow_unicode=True)
+    for leak in ("generated_by", "vendor_family", "operator", "scores"):
+        assert leak not in blob, leak
+
+
+def test_a_run_without_constraints_yields_an_empty_envelope(tmp_path, reviewed_run):
+    """Absent must mean empty, not a crash: live6 predates the field."""
+    store, run_dir, _ = reviewed_run
+    assert review_packet(store, run_dir)["constraints"] == []

@@ -45,6 +45,8 @@ def main() -> int:
     packet.add_argument("--run", required=True)
     packet.add_argument("--if-root")
     packet.add_argument("--out", required=True)
+    packet.add_argument("--constraints-from",
+                        help="brief.yaml whose constraints to apply (default: the run's own)")
     rec = sub.add_parser("recommend", help="fold a reviewer outbox into review.yaml")
     rec.add_argument("--run", required=True)
     rec.add_argument("--if-root")
@@ -58,6 +60,8 @@ def main() -> int:
     ask.add_argument("--timeout-s", type=int, default=1200)
     ask.add_argument("--no-apply", action="store_true",
                      help="collect the recommendation without touching review.yaml")
+    ask.add_argument("--constraints-from",
+                     help="brief.yaml whose constraints to apply (default: the run's own)")
     rat = sub.add_parser("ratify", help="a person takes ownership of a recommendation")
     rat.add_argument("--run", required=True)
     rat.add_argument("--if-root")
@@ -77,10 +81,17 @@ def main() -> int:
             return 0 if report.get("seed_count", 0) > 0 else 1
         store = Store(args.if_root)
         run_dir = store.root / "runs" / args.run
+        def _constraints():
+            src = getattr(args, "constraints_from", None)
+            if not src:
+                return None
+            return list((yaml.safe_load(Path(src).read_text(encoding="utf-8"))
+                         or {}).get("constraints") or [])
+
         if args.cmd == "review-packet":
             out = Path(args.out)
             out.parent.mkdir(parents=True, exist_ok=True)
-            packet = review_packet(store, run_dir)
+            packet = review_packet(store, run_dir, _constraints())
             out.write_text(
                 yaml.safe_dump(packet, allow_unicode=True, sort_keys=False),
                 encoding="utf-8",
@@ -91,7 +102,8 @@ def main() -> int:
         if args.cmd == "review-run":
             print(json.dumps(
                 request_review(store, run_dir, args.lwar_id, args.by,
-                               args.timeout_s, apply=not args.no_apply),
+                               args.timeout_s, apply=not args.no_apply,
+                               constraints=_constraints()),
                 ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "recommend":
