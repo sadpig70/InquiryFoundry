@@ -14,6 +14,7 @@ from .const import (
     OPERATOR_IDS,
     Q_STATUSES,
     QUESTION_CLASSES,
+    REASON_KINDS,
     REVIEWER_KINDS,
     RUN_MODES,
     UNKNOWN_TYPES,
@@ -248,6 +249,7 @@ SCHEMAS: dict[str, dict] = {
                         "question_id": _str(),
                         "decision": {"enum": ["adopt", "reject", "defer"]},
                         "reason": _str(),
+                        "reason_kind": {"enum": REASON_KINDS},
                         "informational": {"type": "boolean"},
                         "checks": {"type": "object"},
                     },
@@ -281,6 +283,7 @@ SCHEMAS: dict[str, dict] = {
                         "minimal_test": {},
                         "decision": {"enum": ["adopt", "reject", "defer", "pending"]},
                         "reason": _str(),
+                        "reason_kind": {"enum": REASON_KINDS},
                         "informational": {"type": "boolean"},
                         "bucket": {"enum": ["pareto", "dissent", "informational"]},
                         "checks": {"type": "object"},
@@ -324,6 +327,7 @@ SCHEMAS: dict[str, dict] = {
             # so a machine-written reason must stay distinguishable from a
             # human's after the fact.
             "decided_by": {"enum": REVIEWER_KINDS},
+            "reason_kind": {"enum": REASON_KINDS},
         },
     },
     "edges_rec": {

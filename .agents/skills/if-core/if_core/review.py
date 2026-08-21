@@ -108,6 +108,11 @@ def preflight_close(store: Store, doc: dict, report: dict) -> None:
         raise Blocked("dissent_not_referenced")
 
 
+def default_reason_kind(decision: str) -> str:
+    """A deferral is usually about us; anything else is about the question."""
+    return "our_capacity" if decision == "defer" else "question_defect"
+
+
 REVIEW_FIELDS = (
     "question", "question_class", "why_matters", "assumptions", "unknowns",
     "evidence", "falsifier", "minimal_test", "action_plan",
@@ -244,6 +249,10 @@ def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> di
             raise Blocked("empty reason for %s" % d["question_id"])
         d["decision"] = rec["decision"]
         d["reason"] = rec["reason"]
+        # Absent means the verdict is about the question. A reviewer that means
+        # "we cannot run this" has to say so, because that must not be fed
+        # forward as something the next run should avoid asking.
+        d["reason_kind"] = rec.get("reason_kind") or default_reason_kind(rec["decision"])
         d["informational"] = bool(rec.get("informational", False))
         if rec.get("checks"):
             d["checks"] = rec["checks"]
@@ -290,6 +299,7 @@ def close_review(store: Store, run_dir: Path) -> dict:
                 "decision": "reject", "reason": d.get("reason") or "mechanical_rejected",
                 "domain": domain, "run_id": doc["run_id"], "informational": True,
                 "decided_by": decided_by,
+                "reason_kind": d.get("reason_kind") or "question_defect",
             })
             decided["reject"] += 1
             continue
@@ -314,6 +324,7 @@ def close_review(store: Store, run_dir: Path) -> dict:
             "decision": d["decision"], "reason": d["reason"],
             "domain": domain, "run_id": doc["run_id"], "informational": False,
             "decided_by": decided_by,
+            "reason_kind": d.get("reason_kind") or default_reason_kind(d["decision"]),
         })
         decided[d["decision"]] += 1
     report["human"] = "closed"

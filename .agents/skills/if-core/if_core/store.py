@@ -202,10 +202,23 @@ class Store:
         append_jsonl(self.decisions, rec)
 
     def query_avoid_patterns(self, domain: str, n: int = 8) -> list[str]:
+        """What the next run is told to avoid: defects in questions, only.
+
+        A verdict can be about the question or about us. "The falsifier needs
+        data nobody can obtain" is the first; "that grid costs tens of millions
+        and we are not a frontier lab" is the second, and teaching a generator
+        the second is how a question about the world became a question about
+        our budget between RUN-20260820-live6 and RUN-20260821-live8.
+
+        Rows written before this axis existed carry no `reason_kind`. They are
+        read as question defects, which is exactly how they behaved, rather
+        than reclassified after the fact by guessing at someone's wording.
+        """
         rows = [
             r for r in load_jsonl(self.decisions)
             if r.get("decision") == "reject" and r.get("domain") == domain and r.get("reason")
             and not r.get("informational")
+            and (r.get("reason_kind") or "question_defect") == "question_defect"
         ]
         return [r["reason"] for r in rows[-n:]]
 

@@ -251,3 +251,52 @@ def test_a_second_review_of_the_same_run_gets_its_own_round(reviewed_run, monkey
     out = review_mod.request_review(store, run_dir, "LWAR9", "fable-5",
                                     apply=False, round_n=7)
     assert out["round_n"] == 7
+
+
+def test_a_capacity_verdict_does_not_teach_the_next_run(reviewed_run):
+    """A verdict can be about the question or about us. Feeding the second
+    forward is how RUN-20260820-live6's question about the post-Chinchilla
+    regime became RUN-20260821-live8's question about fitting sensitivity at a
+    scale we can afford. Only question defects reach the avoid window."""
+    store, run_dir, qos = reviewed_run
+    out = _outbox(qos, decision="reject",
+                  reason="반증 조건이 비공개 소유 데이터로만 판정된다. 공개 대체물이 없다.")
+    out["recommendations"][1].update({
+        "reason": "다중 노드 클러스터 접근권이 우리에게 없다. 질문 자체에는 결함이 없다.",
+        "reason_kind": "our_capacity",
+    })
+    apply_recommendation(run_dir, out, "fable-5")
+    ratify(run_dir, "Jung Wook Yang")
+    close_review(store, run_dir)
+
+    rows = _decision_rows(store)
+    kinds = sorted(r["reason_kind"] for r in rows)
+    assert kinds == ["our_capacity", "question_defect"]
+
+    avoid = store.query_avoid_patterns("scaling")
+    assert len(avoid) == 1
+    assert "공개 대체물이 없다" in avoid[0]
+    assert all("클러스터" not in a for a in avoid)
+
+
+def test_rows_written_before_the_axis_existed_still_count(tmp_path):
+    """Legacy rows carry no reason_kind. They are read as question defects,
+    which is how they behaved, rather than reclassified by guessing at
+    someone's wording after the fact."""
+    store = Store(tmp_path)
+    store.record_decision({
+        "question_id": "Q-OLD", "decision": "reject", "domain": "scaling",
+        "reason": "이미 답이 나옴. 후속 문헌이 닫은 갭이다.", "run_id": "RUN-OLD",
+        "informational": False,
+    })
+    assert store.query_avoid_patterns("scaling") == ["이미 답이 나옴. 후속 문헌이 닫은 갭이다."]
+
+
+def test_an_unknown_reason_kind_is_refused():
+    from if_core.semantic import assert_role_output as check
+
+    bad = {"recommendations": [{"question_id": "Q-1", "decision": "reject",
+                                "reason": "the cited appendix already settles this",
+                                "reason_kind": "too_expensive"}]}
+    with pytest.raises(SemanticError, match="reason_kind"):
+        check("review", bad, allow_stub=False)

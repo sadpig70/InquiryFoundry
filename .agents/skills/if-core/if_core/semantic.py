@@ -45,6 +45,11 @@ def assert_role_output(role: str, items, *, allow_stub: bool) -> None:
             # the reason becomes the next run's avoid_pattern.
             if rec.get("decision") in {"reject", "defer"} and len(reason.strip()) < 20:
                 raise SemanticError(f"review[{i}] {rec.get('decision')} without a reason")
+            # A rejection is fed forward as something to avoid asking, so one
+            # grounded in what this installation happens to own has to declare
+            # itself. Absent means the verdict is about the question.
+            if rec.get("reason_kind") not in (None, "question_defect", "our_capacity"):
+                raise SemanticError(f"review[{i}] unknown reason_kind {rec['reason_kind']!r}")
         return
     if not isinstance(items, list):
         raise SemanticError(f"{role} outbox must be a YAML list")

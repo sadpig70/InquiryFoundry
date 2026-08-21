@@ -36,6 +36,12 @@ PHASES = {"generate": "EXPLORE", "contrarian": "EXPLOIT", "judge": "EXPLOIT",
 # with an empty `reviewer`, so a machine recommendation cannot close a run —
 # a person has to put their name on it. See REVIEWER_KINDS.
 REVIEWER_KINDS = ["human", "machine_recommended", "human_ratified"]
+# What a verdict is about. `question_defect` is a property of the question and
+# is fed forward as an avoid_pattern; `our_capacity` is a fact about this
+# installation — a cluster we do not own, a budget we do not have — and must
+# not teach the generator anything. IF produces questions; whether we can run
+# one is a separate matter, and DEFERRED is where that lives.
+REASON_KINDS = ["question_defect", "our_capacity"]
 RUN_MODES = ["normal", "ablation"]
 GOALS = ["discovery", "validation", "strategy", "risk", "invention"]
 METHODS = ["observe", "experiment", "data", "simulation"]
