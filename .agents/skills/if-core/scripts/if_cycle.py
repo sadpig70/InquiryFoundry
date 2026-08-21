@@ -62,6 +62,8 @@ def main() -> int:
                      help="collect the recommendation without touching review.yaml")
     ask.add_argument("--constraints-from",
                      help="brief.yaml whose constraints to apply (default: the run's own)")
+    ask.add_argument("--round", type=int, default=None,
+                     help="review round (default: next free one)")
     rat = sub.add_parser("ratify", help="a person takes ownership of a recommendation")
     rat.add_argument("--run", required=True)
     rat.add_argument("--if-root")
@@ -103,7 +105,7 @@ def main() -> int:
             print(json.dumps(
                 request_review(store, run_dir, args.lwar_id, args.by,
                                args.timeout_s, apply=not args.no_apply,
-                               constraints=_constraints()),
+                               constraints=_constraints(), round_n=args.round),
                 ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "recommend":

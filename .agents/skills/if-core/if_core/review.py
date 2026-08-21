@@ -155,7 +155,8 @@ def review_packet(store: Store, run_dir: Path,
 
 def request_review(store: Store, run_dir: Path, lwar_id: str,
                    recommended_by: str, timeout_s: int = 1200,
-                   apply: bool = True, constraints: list[str] | None = None) -> dict:
+                   apply: bool = True, constraints: list[str] | None = None,
+                   round_n: int | None = None) -> dict:
     """Send one run to a reviewer LWAR and fold back what it recommends.
 
     The reviewer must not be one of the runtimes that generated the run — the
@@ -173,6 +174,19 @@ def request_review(store: Store, run_dir: Path, lwar_id: str,
     if lwar_id in generators:
         raise Blocked("%s generated part of this run and cannot review it" % lwar_id)
 
+    if round_n is None:
+        # task_id is derived from (run_id, role, lwar, round_n) and the ledger
+        # refuses a repeat, so a second review of the same run collides on r0.
+        # Re-reviewing is a normal thing to want — a changed envelope, a second
+        # opinion — so find the next free round instead of making the operator
+        # track it.
+        used = {
+            int(f.stem.rsplit("-r", 1)[1])
+            for f in (run_dir / "pao_drafts").glob("review-%s-r*.json" % lwar_id)
+            if f.stem.rsplit("-r", 1)[-1].isdigit()
+        }
+        round_n = max(used) + 1 if used else 0
+
     packet = review_packet(store, run_dir, constraints)
     inbox = {
         "schema": "if.task.v1",
@@ -182,6 +196,7 @@ def request_review(store: Store, run_dir: Path, lwar_id: str,
         "phase": "REVIEW",
         "constraints": packet["constraints"],
         "questions": packet["questions"],
+        "round_n": round_n,
     }
     accepted, statuses = publish_collect(run_dir, "review", [(lwar_id, inbox)], timeout_s)
     outbox = accepted.get(lwar_id)
@@ -193,10 +208,12 @@ def request_review(store: Store, run_dir: Path, lwar_id: str,
         # two is the entire point.
         validate_obj("review_outbox", outbox)
         return {"status": "collected", "applied": 0, "recommended_by": recommended_by,
+                "round_n": round_n,
                 "recommendations": outbox["recommendations"],
                 "observed_statuses": statuses}
     result = apply_recommendation(run_dir, outbox, recommended_by)
     result["observed_statuses"] = statuses
+    result["round_n"] = round_n
     return result
 
 

@@ -217,3 +217,37 @@ def test_a_run_without_constraints_yields_an_empty_envelope(tmp_path, reviewed_r
     """Absent must mean empty, not a crash: live6 predates the field."""
     store, run_dir, _ = reviewed_run
     assert review_packet(store, run_dir)["constraints"] == []
+
+
+def test_a_second_review_of_the_same_run_gets_its_own_round(reviewed_run, monkeypatch):
+    """task_id is derived from (run_id, role, lwar, round_n) and the ledger
+    refuses a repeat, so a second review collided on r0 and died with "task
+    already has a ledger entry". Re-reviewing is a normal thing to want — a
+    changed envelope, a second opinion — so the round advances by itself."""
+    import if_core.review as review_mod
+
+    store, run_dir, qos = reviewed_run
+    (run_dir / "pao_drafts").mkdir(exist_ok=True)
+    seen = []
+
+    def fake_publish(rd, role, items, timeout_s, **kw):
+        lwar_id, inbox = items[0]
+        seen.append(inbox["round_n"])
+        # publish_collect writes the draft; stand in for that so the next call
+        # sees this round as taken.
+        (rd / "pao_drafts" / ("review-%s-r%d.json" % (lwar_id, inbox["round_n"]))).write_text(
+            "{}", encoding="utf-8")
+        return {lwar_id: _outbox(qos)}, ["succeeded"]
+
+    # request_review imports publish_collect from .bus at call time, so the
+    # patch has to land on the bus module itself.
+    import if_core.bus as bus_mod
+    monkeypatch.setattr(bus_mod, "publish_collect", fake_publish)
+
+    review_mod.request_review(store, run_dir, "LWAR9", "fable-5", apply=False)
+    review_mod.request_review(store, run_dir, "LWAR9", "fable-5", apply=False)
+    assert seen == [0, 1]
+
+    out = review_mod.request_review(store, run_dir, "LWAR9", "fable-5",
+                                    apply=False, round_n=7)
+    assert out["round_n"] == 7
