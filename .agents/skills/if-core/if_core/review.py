@@ -292,6 +292,53 @@ def ratify(run_dir: Path, reviewer: str, delegated: bool = False) -> dict:
             "reviewer_kind": doc.get("reviewer_kind")}
 
 
+def reopen_review(store: Store, run_dir: Path) -> dict:
+    """Put recovered questions back in front of a review that already closed.
+
+    `rejudge` scores questions a lost judge left behind, but a closed run has
+    no way to take them: `close_review` skips anything already transitioned and
+    overwrites `report.decided`, so the recovered work would sit at SCORED
+    forever. Building the recovery and not the way back would repeat the
+    mistake it was fixing — DORMANT was a parking space with no exit until
+    `rejudge`, and this is that exit's other half.
+
+    Only questions this run minted, now SCORED, and absent from the existing
+    decisions are added. Verdicts already made are never touched, and the
+    counts already reported stay as they were: `close_review` adds to them.
+    """
+    doc = load_yaml(run_dir / "review.yaml")
+    id_map = load_yaml(run_dir / "local_id_map.yaml") or {}
+    listed = {d["question_id"] for d in doc["decisions"]}
+    added = []
+    for local_id, qid in sorted(id_map.items()):
+        if qid in listed:
+            continue
+        q = store.load_question(qid)
+        if not q or q.get("status") != "SCORED":
+            continue
+        doc["decisions"].append({
+            "question_id": qid,
+            "question": q["question"],
+            "minimal_test": q.get("minimal_test") or {},
+            "decision": "pending",
+            "reason": "",
+            "informational": False,
+            "checks": {"already_answered": None, "test_runnable": None, "duplicate": None},
+            "bucket": "pareto",
+        })
+        added.append(qid)
+    if not added:
+        return {"status": "nothing_to_reopen", "added": []}
+    # A fresh verdict is owed on these, so the run is not signed any more.
+    doc["reviewer"] = ""
+    doc["reviewer_kind"] = "machine_recommended" if doc.get("recommended_by") else "human"
+    if not doc.get("recommended_by"):
+        doc.pop("reviewer_kind", None)
+    validate_obj("review", doc)
+    atomic_write_yaml(run_dir / "review.yaml", doc)
+    return {"status": "reopened", "added": added, "awaiting": "review then ratify"}
+
+
 def close_review(store: Store, run_dir: Path) -> dict:
     doc = load_yaml(run_dir / "review.yaml")
     report = load_yaml(run_dir / "report.yaml") or {}
@@ -340,6 +387,11 @@ def close_review(store: Store, run_dir: Path) -> dict:
         decided[d["decision"]] += 1
     report["human"] = "closed"
     report["reviewer_kind"] = decided_by
+    # A reopened run adds to what it already reported rather than replacing it:
+    # the questions decided in the first pass were decided.
+    prior = report.get("decided") or {}
+    for key in decided:
+        decided[key] += int(prior.get(key) or 0)
     report["dissent_referenced"] = True
     report["decided"] = decided
     atomic_write_yaml(run_dir / "report.yaml", report)

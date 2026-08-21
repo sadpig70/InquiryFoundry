@@ -13,6 +13,7 @@ from if_core.cycle import close_run, inquiry_cycle, rejudge  # noqa: E402
 from if_core.review import (  # noqa: E402
     apply_recommendation,
     ratify,
+    reopen_review,
     request_review,
     review_packet,
 )
@@ -64,6 +65,9 @@ def main() -> int:
                      help="brief.yaml whose constraints to apply (default: the run's own)")
     ask.add_argument("--round", type=int, default=None,
                      help="review round (default: next free one)")
+    reo = sub.add_parser("reopen", help="put recovered questions back in front of a closed review")
+    reo.add_argument("--run", required=True)
+    reo.add_argument("--if-root")
     rej = sub.add_parser("rejudge", help="score questions a lost judge left unscored")
     rej.add_argument("--run", required=True)
     rej.add_argument("--if-root")
@@ -107,6 +111,9 @@ def main() -> int:
             )
             print(json.dumps({"wrote": str(out), "questions": len(packet["questions"])},
                              ensure_ascii=False, indent=2))
+            return 0
+        if args.cmd == "reopen":
+            print(json.dumps(reopen_review(store, run_dir), ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "rejudge":
             print(json.dumps(

@@ -315,3 +315,67 @@ def test_a_delegated_close_is_not_recorded_as_a_read_one(reviewed_run):
     close_review(store, run_dir)
     rows = _decision_rows(store)
     assert rows and all(r["decided_by"] == "delegated" for r in rows)
+
+
+def test_reopen_adds_recovered_questions_without_disturbing_settled_ones(reviewed_run):
+    """rejudge scores what a lost judge left behind, but a closed run cannot
+    take them: close_review skips anything already transitioned and overwrites
+    report.decided, so the recovered work would sit at SCORED forever. Building
+    the recovery without the way back would repeat the mistake it was fixing."""
+    from if_core.compose import compose
+    from if_core.review import reopen_review
+
+    store, run_dir, qos = reviewed_run
+    # First pass: decided and closed.
+    apply_recommendation(run_dir, _outbox(qos, decision="reject",
+                                          reason="반증 조건이 설계상 도달 불가능하다."), "fable-5")
+    ratify(run_dir, "Jung Wook Yang", delegated=True)
+    first = close_review(store, run_dir)
+    assert first["decided"] == {"adopt": 0, "reject": 2, "defer": 0}
+    settled = {d["question_id"]: d["reason"] for d in
+               yaml.safe_load((run_dir / "review.yaml").read_text(encoding="utf-8"))["decisions"]}
+
+    # A recovered question appears afterwards, as rejudge leaves it.
+    late = _seed("LWAR2-09")
+    late["question_norm"] += " recovered"
+    compose(store, run_dir, "RUN-R", [late],
+            {"LWAR2-09": {"verdict": "SURVIVED", "local_id": "LWAR2-09", "attacks": []}},
+            {"LWAR2-09": {"verdict": "PASS", "scores": {
+                "impact": 0.7, "testability": 0.7, "grounding": 0.7, "actionability": 0.7}}},
+            {"papers": ["papers/kaplan2020"]}, "normal")
+    id_map = {q["local_id"]: q["question_id"] for q in qos}
+    id_map["LWAR2-09"] = [q["question_id"] for q in store.load_status("SCORED")
+                          if q["local_id"] == "LWAR2-09"][0]
+    (run_dir / "local_id_map.yaml").write_text(
+        yaml.safe_dump(id_map, allow_unicode=True), encoding="utf-8")
+
+    out = reopen_review(store, run_dir)
+    assert out["status"] == "reopened"
+    assert out["added"] == [id_map["LWAR2-09"]]
+
+    doc = yaml.safe_load((run_dir / "review.yaml").read_text(encoding="utf-8"))
+    assert doc["reviewer"] == "", "a fresh verdict is owed, so the run is unsigned again"
+    for d in doc["decisions"]:
+        if d["question_id"] in settled:
+            assert d["reason"] == settled[d["question_id"]], "settled verdicts must not move"
+
+    # Deciding the newcomer adds to what was already reported.
+    for d in doc["decisions"]:
+        if d["decision"] == "pending":
+            d.update(decision="adopt", reason="공개 데이터로 재현 가능한 판별 설계다.")
+    (run_dir / "review.yaml").write_text(
+        yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    ratify(run_dir, "Jung Wook Yang", delegated=True)
+    second = close_review(store, run_dir)
+    assert second["decided"] == {"adopt": 1, "reject": 2, "defer": 0}
+
+
+def test_reopen_is_a_noop_when_nothing_was_recovered(reviewed_run):
+    from if_core.review import reopen_review
+
+    store, run_dir, qos = reviewed_run
+    (run_dir / "local_id_map.yaml").write_text(
+        yaml.safe_dump({q["local_id"]: q["question_id"] for q in qos}), encoding="utf-8")
+    out = reopen_review(store, run_dir)
+    assert out["status"] == "nothing_to_reopen"
+    assert yaml.safe_load((run_dir / "review.yaml").read_text(encoding="utf-8"))["reviewer"] == ""
