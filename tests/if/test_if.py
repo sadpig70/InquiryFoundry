@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 from pathlib import Path
 
 import pytest
@@ -838,3 +839,104 @@ def test_a_fresh_seed_is_not_flagged_as_a_repeat(tmp_path):
     run = Run(id="RUN-N", dir=tmp_path, brief={"domain": "scaling"}, nonce=b"x" * 32)
     note_repeats(store, run, [stamp_lineage(_compose_seed("LWAR1-01"), "LWAR1", "RUN-N")])
     assert run.repeat_seeds == []
+
+
+def _rejudge_run(tmp_path, store, statuses=("DORMANT", "DORMANT")):
+    """A finished run with unscored DORMANT questions, as live7b was left."""
+    from if_core.compose import compose
+
+    run_dir = tmp_path / "runs" / "RUN-RJ"
+    run_dir.mkdir(parents=True)
+    (run_dir / "run_nonce").write_bytes(b"n" * 32)
+    (run_dir / "pao_drafts").mkdir()
+    yaml_dump = lambda o: yaml.safe_dump(o, allow_unicode=True, sort_keys=False)
+    (run_dir / "brief.yaml").write_text(
+        yaml_dump({"brief_id": "RUN-RJ", "mode": "normal", "domain": "scaling"}),
+        encoding="utf-8")
+
+    seeds = []
+    for i, owner in enumerate(("LWAR1", "LWAR2"), start=1):
+        s = _compose_seed("%s-0%d" % (owner, i))
+        s["question_norm"] += " variant %d" % i
+        s["lineage"] = {**s["lineage"], "generated_by": owner, "run_id": "RUN-RJ"}
+        seeds.append(s)
+    dissents = {
+        s["local_id"]: {"verdict": "SURVIVED", "local_id": s["local_id"],
+                        "examiner": "LWAR3", "attacks": []}
+        for s in seeds
+    }
+    # No cards at all: the judge round that never came back.
+    qos = compose(store, run_dir, "RUN-RJ", seeds, dissents, {},
+                  {"papers": ["papers/kaplan2020"]}, "normal")
+    assert [q["status"] for q in qos] == list(statuses)
+    (run_dir / "local_id_map.yaml").write_text(
+        yaml_dump({q["local_id"]: q["question_id"] for q in qos}), encoding="utf-8")
+    return run_dir, qos
+
+
+def test_rejudge_scores_what_a_lost_judge_left_and_excludes_the_right_lwars(tmp_path, monkeypatch):
+    """live7b lost its third runtime mid-judge and four questions that had
+    passed every gate sat unscored. DORMANT stopped that reading as a
+    rejection, but recovering them needed a path that did not exist. Only the
+    judge round repeats — redoing generation would produce different questions,
+    not the same ones scored — and the runtime that wrote a question or
+    attacked it still may not score it."""
+    # cycle imports publish_collect at module level, so the patch lands there.
+    import if_core.cycle as cycle_mod
+    from if_core.cycle import rejudge
+
+    store = Store(tmp_path)
+    run_dir, qos = _rejudge_run(tmp_path, store)
+    published = {}
+
+    def fake_publish(rd, role, items, timeout_s, **kw):
+        out = {}
+        for lwar_id, inbox in items:
+            published[lwar_id] = inbox
+            out[lwar_id] = [
+                {"anon_id": q["anon_id"], "verdict": "PASS",
+                 "scores": {"impact": 0.8, "testability": 0.8,
+                            "grounding": 0.8, "actionability": 0.8}}
+                for q in inbox["questions"]
+            ]
+        return out, ["succeeded"] * len(items)
+
+    monkeypatch.setattr(cycle_mod, "publish_collect", fake_publish)
+    lwars = [{"lwar_id": "LWAR1", "vendor_family": "openai"},
+             {"lwar_id": "LWAR2", "vendor_family": "google"},
+             {"lwar_id": "LWAR3", "vendor_family": "xai"}]
+
+    out = rejudge(tmp_path, "RUN-RJ", lwars)
+
+    assert sorted(out["rescued"]) == sorted(q["question_id"] for q in qos)
+    assert out["still_unjudged"] == []
+    for q in qos:
+        fresh = store.load_question(q["question_id"])
+        assert fresh["status"] == "SCORED"
+        assert fresh["scores"]["impact"] == 0.8
+
+    # Author and cross-examiner are both excluded, and the packet stays blind.
+    assert "LWAR3" not in published, "the cross-examiner must not judge"
+    for lwar_id, inbox in published.items():
+        blob = json.dumps(inbox, ensure_ascii=False)
+        assert "generated_by" not in blob
+        for q in inbox["questions"]:
+            assert "question_id" not in q and "local_id" not in q
+
+
+def test_rejudge_is_a_noop_when_nothing_is_unscored(tmp_path):
+    from if_core.cycle import rejudge
+
+    store = Store(tmp_path)
+    run_dir, qos = _rejudge_run(tmp_path, store)
+    for q in qos:
+        fresh = store.load_question(q["question_id"])
+        fresh["status"] = "SCORED"
+        fresh["scores"] = {"impact": 0.5, "testability": 0.5,
+                           "grounding": 0.5, "actionability": 0.5}
+        store.write_question(fresh, actor="oa")
+    out = rejudge(tmp_path, "RUN-RJ",
+                  [{"lwar_id": "LWAR%d" % i, "vendor_family": v}
+                   for i, v in enumerate(("openai", "google", "xai"), start=1)])
+    assert out["status"] == "nothing_to_rejudge"
+    assert out["rescued"] == []

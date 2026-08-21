@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from if_core.cycle import close_run, inquiry_cycle  # noqa: E402
+from if_core.cycle import close_run, inquiry_cycle, rejudge  # noqa: E402
 from if_core.review import (  # noqa: E402
     apply_recommendation,
     ratify,
@@ -64,6 +64,11 @@ def main() -> int:
                      help="brief.yaml whose constraints to apply (default: the run's own)")
     ask.add_argument("--round", type=int, default=None,
                      help="review round (default: next free one)")
+    rej = sub.add_parser("rejudge", help="score questions a lost judge left unscored")
+    rej.add_argument("--run", required=True)
+    rej.add_argument("--if-root")
+    rej.add_argument("--lwars", required=True, help="LWAR1:openai,LWAR2:google,LWAR3:xai")
+    rej.add_argument("--timeout-s", type=int, default=None)
     rat = sub.add_parser("ratify", help="a person takes ownership of a recommendation")
     rat.add_argument("--run", required=True)
     rat.add_argument("--if-root")
@@ -102,6 +107,11 @@ def main() -> int:
             )
             print(json.dumps({"wrote": str(out), "questions": len(packet["questions"])},
                              ensure_ascii=False, indent=2))
+            return 0
+        if args.cmd == "rejudge":
+            print(json.dumps(
+                rejudge(args.if_root, args.run, parse_lwars(args.lwars), args.timeout_s),
+                ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "review-run":
             print(json.dumps(

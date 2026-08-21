@@ -10,7 +10,7 @@ from pathlib import Path
 from .allocate import build_allocation, inject_divergence, vendor_family
 from .bus import ensure_jail, publish_collect
 from .compose import compose, stamp_lineage
-from .const import EXCLUDE_ADAPTERS, EXCLUDE_FAMILIES, PRIOR_N, TH_MEAN, TH_PAIR
+from .const import EXCLUDE_ADAPTERS, EXCLUDE_FAMILIES, MECH, PRIOR_N, TH_MEAN, TH_PAIR
 from .schema import SchemaError, validate_obj
 from .contrarian import cross_examine
 from .generate import generate
@@ -468,6 +468,114 @@ def inquiry_cycle(brief: dict, lwars: list[dict], if_root=None, packs=None, pao:
     }
     atomic_write_yaml(run.dir / "report.yaml", report)
     return report
+
+
+def rejudge(if_root, run_id: str, lwars: list[dict], timeout_s: int | None = None) -> dict:
+    """Score the questions a lost judge left unscored, without rerunning the run.
+
+    RUN-20260820-live7b lost its third runtime to credit exhaustion mid-judge.
+    Four questions had passed every mechanical gate and survived cross-
+    examination, and the only thing missing was a score card. §7.9 stopped that
+    from reading as a rejection by routing them to DORMANT, but DORMANT is a
+    parking space, not an answer — recovering them needed a path that did not
+    exist, so an infrastructure failure still ended up eating the work.
+
+    Generation and cross-examination are not repeated: their outputs are intact
+    and redoing them would produce different questions, not the same ones
+    scored. Only the judge round runs again, under the original run's nonce so
+    the blinding is the one the run already committed to, and excluding both the
+    runtime that wrote each question and the one that attacked it.
+    """
+    store = Store(if_root)
+    run_dir = store.root / "runs" / run_id
+    if not run_dir.is_dir():
+        raise Blocked(f"no such run: {run_id}")
+    reject_excluded(lwars)
+    brief = load_yaml(run_dir / "brief.yaml") or {}
+    mode = brief.get("mode", "normal")
+    if mode == "normal" and len(lwars) < 3:
+        raise Blocked("normal mode needs >= 3 LWARs")
+
+    id_map = load_yaml(run_dir / "local_id_map.yaml") or {}
+    pending = []
+    for local_id, qid in sorted(id_map.items()):
+        q = store.load_question(qid)
+        if not q or q.get("status") != "DORMANT" or q.get("scores"):
+            continue
+        if any(q.get("gate_results", {}).get(g) == "fail" for g in MECH):
+            continue
+        pending.append({**q, "local_id": local_id})
+    if not pending:
+        return {"status": "nothing_to_rejudge", "run_id": run_id, "rescued": []}
+
+    examiner = {
+        d.get("local_id"): d.get("examiner")
+        for d in store.load_dissent(run_id) if d.get("local_id")
+    }
+    forbidden = {}
+    for q in pending:
+        blocked_by = {q["lineage"]["generated_by"]}
+        if examiner.get(q["local_id"]):
+            blocked_by.add(examiner[q["local_id"]])
+        forbidden[q["local_id"]] = blocked_by
+
+    nonce = (run_dir / "run_nonce").read_bytes()
+    assignment = cross_assign(pending, lwars, forbidden)
+    items, anon_map = [], {}
+    for lid, qs in assignment.items():
+        blinded, excl = [], set()
+        for q in qs:
+            aid = mint_anon(nonce, q["local_id"])
+            anon_map[aid] = q["local_id"]
+            blinded.append(blind_packet(q, aid))
+            excl |= forbidden[q["local_id"]]
+        items.append((lid, {
+            "schema": "if.task.v1",
+            "role": "judge",
+            "run_id": run_id,
+            "lwar_id": lid,
+            "phase": "EXPLOIT",
+            "exclude_lwars": sorted(excl),
+            "questions": blinded,
+            # A fresh round: task_id derives from it and the ledger refuses a
+            # repeat of the round that timed out.
+            "round_n": _next_round(run_dir, "judge"),
+        }))
+    timeout = int(timeout_s or brief.get("budget", {}).get("judge_timeout_s") or 600)
+    accepted, statuses = publish_collect(run_dir, "judge", items, timeout)
+
+    by_local = {}
+    for recs in accepted.values():
+        for card in recs or []:
+            aid = card.get("anon_id")
+            if aid in anon_map and anon_map[aid] not in by_local:
+                by_local[anon_map[aid]] = card
+
+    rescued, still_unjudged = [], []
+    for q in pending:
+        card = by_local.get(q["local_id"])
+        if not card or not card.get("scores") or card.get("verdict") == "GATE_FAIL":
+            still_unjudged.append(q["question_id"])
+            continue
+        fresh = store.load_question(q["question_id"])
+        fresh["scores"] = card["scores"]
+        fresh["status"] = "SCORED"
+        store.write_question(fresh, actor="oa")
+        rescued.append(q["question_id"])
+    return {
+        "status": "rejudged", "run_id": run_id,
+        "rescued": rescued, "still_unjudged": still_unjudged,
+        "observed_statuses": statuses,
+    }
+
+
+def _next_round(run_dir: Path, role: str) -> int:
+    used = {
+        int(f.stem.rsplit("-r", 1)[1])
+        for f in (run_dir / "pao_drafts").glob(f"{role}-*-r*.json")
+        if f.stem.rsplit("-r", 1)[-1].isdigit()
+    }
+    return max(used) + 1 if used else 0
 
 
 def close_run(if_root, run_id: str) -> dict:
