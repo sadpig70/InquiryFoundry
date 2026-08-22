@@ -206,6 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260822-live15` | **종결** (2026-08-22). `preference` 3회차, `adopt 6 / reject 1 / defer 1`. **원문 창이 처음 실린 런이고 수리도 처음 나왔다**(`OP-CAUSAL`, 새 주석 불필요한 조작으로 재정식화). 이월 코드 `DUP-RESUBMIT` 사용. G-GROUND 탈락 0 — 소진 신호 없음(§7.23) |
 | `RUN-20260822-live14` | **종결** (2026-08-22). `preference` 2회차, `adopt 8 / reject 1`. **이월 코드 `UNREACHABLE-FALSIFIER` 가 새 도메인에서 실제 사용됨 — 검증 5항 통과**. 첫 리뷰는 리뷰어에게 코드 목록이 안 가 자유 문장이 나왔고, 배선을 고쳐 재리뷰함(§7.21) |
 | `RUN-20260822-live13` | **종결** (2026-08-22). **`domain: preference` 첫 런.** `adopt 7 / reject 1 / defer 1`. 코퍼스 11편 중 10편 실사용, **힌트 밖 인용 0**. taxonomy 발효 후 첫 런이나 `question_defect` 거부가 없어 이월 코드는 미시험(§7.20) |
 | `RUN-20260822-live12` | **종결** (2026-08-22). `adopt 4 / reject 5`. `repaired_seeds` 5 / `repeat_seeds` 0. **G-GROUND 실패 2건 — 코퍼스 밖 인용 시도**(소진 신호). pattern 5건이 쌓였으나 어휘 불일치로 **등록부 등재 0**(§7.18) |
@@ -1261,6 +1262,49 @@ preference  15건   (live13 7 · live14 8)
 `scaling` 이 12회차에 코퍼스 밖 인용을 시도한 것이 그 예측의 실현이다(§7.18).
 `preference` 도 같은 곡선을 그릴 것이며, 지금 속도면 10회차 안쪽이다.
 **실행은 파이프라인 밖의 일이고 운영자 판단이 필요하다.**
+
+## 7.23 `preference` 회차별 추이 — 처음으로 깨끗한 시계열 (2026-08-22~)
+
+`scaling` 은 12회를 돌았지만 지표가 뒤늦게 들어와(`repeat_seeds` §7.10, `repaired_seeds`
+§7.17) **회차별 비교가 불가능**하다. `preference` 는 13회차부터 전 지표를 갖고 시작했으므로
+**이 표가 IF 의 첫 온전한 시계열**이다. 새 런을 닫을 때마다 한 줄씩 채울 것.
+
+| 런 | 채택/거부/유보 | 원문 창 | 수리 | 반복 | G-GROUND 탈락 | 이월 코드 |
+|---|---|---:|---:|---:|---:|---|
+| live13 | 7 / 1 / 1 | 0 | 0 | 0 | 0 | — (거부가 기계 자동) |
+| live14 | 8 / 1 / 0 | 0 | 0 | 0 | 0 | `UNREACHABLE-FALSIFIER` |
+| live15 | 6 / 1 / 1 | 1 | **1** | 0 | 0 | `DUP-RESUBMIT` |
+
+### 소진은 아직 멀었다
+
+**G-GROUND 탈락 3회 연속 0.** `scaling` 이 12회차에 코퍼스 밖(`carlini2019`,
+`loshchilov2019`)으로 나가려 한 신호가 `preference` 3회차에는 없다. 코퍼스 11편이
+아직 여유롭다.
+
+### 수리가 원문과 함께 나타났다
+
+live13·live14 는 원문 창이 **0** 이었고 수리도 **0**. live15 는 원문이 **1** 실리자
+수리가 **1** 나왔다. 그 수리는 깨끗하다:
+
+- live14 거부: *주석 화면의 좌우 위치를 조작* → *"공개 릴리스에 제시 순서 메타데이터가 없어
+  공개 대체물이 존재하지 않는다"* (`UNREACHABLE-FALSIFIER`)
+- live15: *고유 쌍 범위를 줄이고 반복을 늘림* → 자료가 **공개 HH 층화 실행**
+
+같은 관심(라벨링 과정이 마진을 움직이는가)을 유지하면서 **새 주석 수집이 필요 없는 조작**으로
+바꿨다. Fable 의 *"1층만 남기고 원문을 없애는 설계는 채택하지 않는다"* 가 지지된다.
+
+**다만 n=1 이다.** live13·live14 에 수리가 없던 것은 **수리할 거부 자체가 없어서**이기도 하다.
+확증이 아니라 첫 데이터점이다.
+
+### 이월 코드는 두 번 다 맞았다
+
+`UNREACHABLE-FALSIFIER`(live14), `DUP-RESUBMIT`(live15) — 둘 다 `scaling` 에서 채굴한
+코드이고 `preference` 의 결함에 그대로 맞았다. **`NEW` 제안은 아직 0건**이다.
+Fable 이 *"결함 구조는 도메인 불변"* 이라 한 전제가 계속 지지되지만,
+반대 방향 실패(**강제 끼워맞춤**)와 구별되지 않는다는 점을 유의할 것 — 검증 3항의
+사람 감사가 그래서 필요하다.
+
+`preference` 등재는 아직 0이다(각 코드 1런). 같은 코드가 한 번 더 나와야 등재된다.
 
 ## 8. 다음 작업 (우선순위)
 
