@@ -206,6 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260822-live14` | **종결** (2026-08-22). `preference` 2회차, `adopt 8 / reject 1`. **이월 코드 `UNREACHABLE-FALSIFIER` 가 새 도메인에서 실제 사용됨 — 검증 5항 통과**. 첫 리뷰는 리뷰어에게 코드 목록이 안 가 자유 문장이 나왔고, 배선을 고쳐 재리뷰함(§7.21) |
 | `RUN-20260822-live13` | **종결** (2026-08-22). **`domain: preference` 첫 런.** `adopt 7 / reject 1 / defer 1`. 코퍼스 11편 중 10편 실사용, **힌트 밖 인용 0**. taxonomy 발효 후 첫 런이나 `question_defect` 거부가 없어 이월 코드는 미시험(§7.20) |
 | `RUN-20260822-live12` | **종결** (2026-08-22). `adopt 4 / reject 5`. `repaired_seeds` 5 / `repeat_seeds` 0. **G-GROUND 실패 2건 — 코퍼스 밖 인용 시도**(소진 신호). pattern 5건이 쌓였으나 어휘 불일치로 **등록부 등재 0**(§7.18) |
 | `RUN-20260822-live11` | **종결** (2026-08-22). `adopt 6 / reject 2 / defer 1`. `repaired_seeds` 4 / `repeat_seeds` 0 / 새 영역 5. **`pattern` 과 쓰기 린트가 처음 발동**했고 거부 2건 모두 수치 없는 구조 서술로 왔다. 등록부는 2런 등재 조건이라 아직 비어 있다(§7.17) |
@@ -1175,6 +1176,58 @@ Q-0034 는 `defer` + `reason_kind: question_defect` 다. Fable 이 기본값(`ou
 
 `repaired_seeds` **0** — 도메인이 바뀌었으므로 정상이며, 지표가 도메인 경계를 넘어
 잘못 매칭하지 않음이 확인됐다. `repeat_seeds` 0, `dropped_seeds` 0, `unjudged` 0.
+
+## 7.21 taxonomy 가 도메인을 건너 작동했다 — 그러나 두 번 배선을 놓쳤다 (2026-08-22, live14)
+
+### 첫 시도는 실패했고 원인은 내 쪽이었다
+
+live14 의 거부 사유 pattern 이 **또 자유 문장**이었다 —
+*"인과 개입이 공개 대체물 없는 새 데이터 수집에 묶여 있어 반증 조건이 공개 설정에서 닫힌 설계"*.
+`UNREACHABLE-FALSIFIER` 를 자기 말로 다시 쓴 것으로, **코드가 막으려던 바로 그 표류**다.
+
+리뷰어 잘못이 아니다. `review_packet` 이 **도메인 한정 등록부**를 읽고 있었고 `preference` 는
+비어 있었다:
+
+```
+리뷰어가 받은 known_patterns: []
+생성기가 받은 코드 수:        8
+```
+
+**코드를 고르라고 요구하면서 목록을 주지 않았다.** §7.19 구현 때 생성기 경로만 전역으로
+고치고 리뷰어 경로를 놓쳤다 — 같은 종류의 누락을 두 번 했다(도메인 이월 자체, 그리고 리뷰어 배선).
+
+### 두 가지를 고쳤다
+
+1. **리뷰어가 생성기와 같은 것을 받는다.** `review_packet` → `query_avoid_patterns(domain)["patterns"]`.
+2. **선택을 검사한다.** 매칭을 문자열 일치에서 **선택**으로 바꾼 이유가 "같은 리뷰어가 한 결함을
+   두 가지로 썼기 때문"인데, **선택했는지 확인하지 않으면 그 변경은 구속력이 없다.**
+   `apply_recommendation` 이 이제 거부한다. `NEW` 는 Fable 이 정한 값(`closest_code` +
+   왜 안 맞는지)을 치르고 쓸 수 있다 — **값을 물리는 것이 목록을 보게 만드는 장치**다.
+
+### 재리뷰 — 검증 5항 통과
+
+> `UNREACHABLE-FALSIFIER — 인과 개입(좌우 노출 무작위 교차)이 공개 대체물 없는 새 주석 수집에
+> 묶여 반증 조건이 공개 설정에서 닫힘`
+
+**`scaling` 에서 채굴한 코드가 `preference` 의 결함에 그대로 맞았다.**
+Fable 의 *"결함 구조는 도메인 불변"* 전제가 실측으로 지지된다. 검증 5항
+(*"0이면 전역 이월의 실익 가정이 틀린 것"*)은 통과다.
+
+```
+[live11 scaling   ] DUP-RESUBMIT          [live12 scaling   ] EVIDENCE-MISATTRIB
+[live11 scaling   ] NONDISCRIMINATING     [live12 scaling   ] DUP-RESUBMIT
+[live12 scaling   ] PREDETERMINED         [live14 preference] UNREACHABLE-FALSIFIER
+```
+
+**되먹임이 두 도메인에 걸쳐 하나의 어휘로 돈다.** 자유 문장이었다면 6행이 6개의 서로 다른
+키였을 것이다.
+
+### live13·live14 요약
+
+`live13 adopt 7/reject 1/defer 1`, `live14 adopt 8/reject 1`. 두 런 모두 손실 0.
+live14 는 **원문 사유 0건 + 코드 8개**만 받은 조건이었고 live13 대비 최대 유사도 0.23 —
+반복 없음. 다만 **도메인이 열린 지 2회차라 코드의 억제력 확증으로 읽으면 안 된다.**
+코드가 값을 하는지는 `scaling` 이 12회차에 코퍼스 밖으로 나가려 했던 것 같은 소진기에 드러난다.
 
 ## 8. 다음 작업 (우선순위)
 
