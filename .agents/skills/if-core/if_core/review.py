@@ -142,6 +142,13 @@ def review_packet(store: Store, run_dir: Path,
     if constraints is None:
         brief = load_yaml(run_dir / "brief.yaml") or {}
         constraints = list(brief.get("constraints") or [])
+    # The registry travels with the packet so a reviewer can reuse an existing
+    # line for a defect already named. Nothing else keeps the vocabulary from
+    # drifting into a list of near-duplicates, which is the failure Fable
+    # flagged as the one it could not predict.
+    brief = load_yaml(run_dir / "brief.yaml") or {}
+    domain = brief.get("domain") or ""
+    known = [e["pattern"] for e in store.avoid_registry(domain)] if domain else []
     items = []
     for d in doc["decisions"]:
         q = store.load_question(d["question_id"]) or {}
@@ -155,7 +162,8 @@ def review_packet(store: Store, run_dir: Path,
             for a in (q.get("dissent") or [])
         ]
         items.append(item)
-    return {"run_id": doc["run_id"], "constraints": list(constraints), "questions": items}
+    return {"run_id": doc["run_id"], "constraints": list(constraints),
+            "known_patterns": known, "questions": items}
 
 
 def request_review(store: Store, run_dir: Path, lwar_id: str,
@@ -200,6 +208,8 @@ def request_review(store: Store, run_dir: Path, lwar_id: str,
         "lwar_id": lwar_id,
         "phase": "REVIEW",
         "constraints": packet["constraints"],
+        # Reuse one of these when the defect is one already named.
+        "known_patterns": packet["known_patterns"],
         "questions": packet["questions"],
         "round_n": round_n,
     }
@@ -253,6 +263,8 @@ def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> di
         # "we cannot run this" has to say so, because that must not be fed
         # forward as something the next run should avoid asking.
         d["reason_kind"] = rec.get("reason_kind") or default_reason_kind(rec["decision"])
+        if rec.get("pattern"):
+            d["pattern"] = rec["pattern"].strip()
         d["informational"] = bool(rec.get("informational", False))
         if rec.get("checks"):
             d["checks"] = rec["checks"]
@@ -383,8 +395,16 @@ def close_review(store: Store, run_dir: Path) -> dict:
             "domain": domain, "run_id": doc["run_id"], "informational": False,
             "decided_by": decided_by,
             "reason_kind": d.get("reason_kind") or default_reason_kind(d["decision"]),
+            **({"pattern": d["pattern"]} if d.get("pattern") else {}),
         })
         decided[d["decision"]] += 1
+    # Publish the derived registry so a person can see what the loop carries.
+    domains = {
+        (store.load_question(d["question_id"]) or {}).get("lineage", {}).get("domain")
+        for d in doc["decisions"]
+    }
+    for domain in sorted(x for x in domains if x):
+        store.write_avoid_registry(domain)
     report["human"] = "closed"
     report["reviewer_kind"] = decided_by
     # A reopened run adds to what it already reported rather than replacing it:

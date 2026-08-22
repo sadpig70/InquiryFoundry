@@ -165,8 +165,10 @@ def test_a_recommendation_for_another_run_is_refused(reviewed_run):
 def test_a_verdict_without_an_argument_is_refused():
     """A reject reason becomes the next run's avoid_pattern, so an empty one is
     worse than no verdict at all."""
-    good = {"recommendations": [{"question_id": "Q-1", "decision": "reject",
-                                 "reason": "the cited appendix already settles this"}]}
+    good = {"recommendations": [{
+        "question_id": "Q-1", "decision": "reject",
+        "reason": "the cited appendix already settles this",
+        "pattern": "the paper being cited already answers the question"}]}
     assert_role_output("review", good, allow_stub=False)
 
     for bad_reason in ("no", "TODO", "deterministic stub answer"):
@@ -273,7 +275,7 @@ def test_a_capacity_verdict_does_not_teach_the_next_run(reviewed_run):
     kinds = sorted(r["reason_kind"] for r in rows)
     assert kinds == ["our_capacity", "question_defect"]
 
-    avoid = store.query_avoid_patterns("scaling")
+    avoid = store.query_avoid_patterns("scaling")["recent_reasons"]
     assert len(avoid) == 1
     assert "공개 대체물이 없다" in avoid[0]
     assert all("클러스터" not in a for a in avoid)
@@ -289,7 +291,7 @@ def test_rows_written_before_the_axis_existed_still_count(tmp_path):
         "reason": "이미 답이 나옴. 후속 문헌이 닫은 갭이다.", "run_id": "RUN-OLD",
         "informational": False,
     })
-    assert store.query_avoid_patterns("scaling") == ["이미 답이 나옴. 후속 문헌이 닫은 갭이다."]
+    assert store.query_avoid_patterns("scaling")["recent_reasons"] == ["이미 답이 나옴. 후속 문헌이 닫은 갭이다."]
 
 
 def test_an_unknown_reason_kind_is_refused():
@@ -379,3 +381,106 @@ def test_reopen_is_a_noop_when_nothing_was_recovered(reviewed_run):
     out = reopen_review(store, run_dir)
     assert out["status"] == "nothing_to_reopen"
     assert yaml.safe_load((run_dir / "review.yaml").read_text(encoding="utf-8"))["reviewer"] == ""
+
+
+def test_the_registry_survives_a_mass_rejection(tmp_path):
+    """Entry is by recurrence across runs and exit is by disuse, so thirteen
+    rejects arriving at once cannot flush what several runs agreed was a trap —
+    which is exactly what happened to the eight-slot window when live7b, live8
+    and live9 closed together."""
+    store = Store(tmp_path)
+    trap = "외부 도메인 형식론을 수입했으나 검정 조건에서 아무 역할을 하지 않음"
+
+    def reject(run_id, qid, reason, pattern):
+        store.record_decision({
+            "question_id": qid, "decision": "reject", "domain": "scaling",
+            "reason": reason, "run_id": run_id, "informational": False,
+            "reason_kind": "question_defect", "pattern": pattern,
+        })
+
+    reject("RUN-A", "Q-A1", "상전이 유비가 대응 규칙 없이 쓰였다", trap)
+    reject("RUN-B", "Q-B1", "재규격화군 유비가 대응 규칙 없이 쓰였다", trap)
+    assert [e["pattern"] for e in store.avoid_registry("scaling")] == [trap]
+
+    # A single close dumps thirteen fresh rejects.
+    for i in range(13):
+        reject("RUN-C", "Q-C%d" % i, "새 결함 %d 이다" % i, "새 pattern %d" % i)
+
+    reg = [e["pattern"] for e in store.avoid_registry("scaling")]
+    assert trap in reg, "recurrence-based entry must outlast a mass rejection"
+    # The one-off patterns are not entered: they appeared in one run only.
+    assert all(not r.startswith("새 pattern") for r in reg)
+
+
+def test_the_registry_retires_a_pattern_that_stops_recurring(tmp_path):
+    """Exit is disuse, not eviction. Otherwise the registry only grows."""
+    store = Store(tmp_path)
+    old = "낡은 결함 구조"
+
+    def reject(run_id, pattern):
+        store.record_decision({
+            "question_id": "Q-%s-%s" % (run_id, pattern[:4]), "decision": "reject",
+            "domain": "scaling", "reason": "사유 " + run_id, "run_id": run_id,
+            "informational": False, "reason_kind": "question_defect", "pattern": pattern,
+        })
+
+    reject("RUN-1", old)
+    reject("RUN-2", old)
+    assert [e["pattern"] for e in store.avoid_registry("scaling")] == [old]
+    for run in ("RUN-3", "RUN-4", "RUN-5", "RUN-6"):
+        reject(run, "다른 결함 구조")
+    assert old not in [e["pattern"] for e in store.avoid_registry("scaling")]
+
+
+def test_the_verbatim_window_is_stratified_by_run(tmp_path):
+    """A single close takes a third of the window, not the whole of it."""
+    store = Store(tmp_path)
+    for run in ("RUN-1", "RUN-2", "RUN-3", "RUN-4"):
+        for i in range(6):
+            store.record_decision({
+                "question_id": "Q-%s-%d" % (run, i), "decision": "reject",
+                "domain": "scaling", "reason": "%s 사유 %d" % (run, i),
+                "run_id": run, "informational": False,
+                "reason_kind": "question_defect", "pattern": "%s p%d" % (run, i),
+            })
+    recent = store.query_avoid_patterns("scaling")["recent_reasons"]
+    assert len(recent) == 9
+    for run in ("RUN-2", "RUN-3", "RUN-4"):
+        assert sum(1 for r in recent if r.startswith(run)) == 3
+    assert not any(r.startswith("RUN-1") for r in recent), "only the last three runs"
+
+
+def test_a_reject_reason_carrying_a_figure_is_refused_at_write_time(tmp_path):
+    """The leak is a sound verdict that mentions a scale in passing, so it
+    cannot be caught by classifying the record. The only place left is the hand
+    that writes it."""
+    from if_core.semantic import assert_role_output as check
+
+    def rec(reason, pattern="검정 조건이 서로 모순된다"):
+        return {"recommendations": [{
+            "question_id": "Q-1", "decision": "reject", "reason": reason,
+            "reason_kind": "question_defect", "pattern": pattern}]}
+
+    with pytest.raises(SemanticError, match="figure"):
+        check("review", rec("질문이 답을 선결했다 — 공개 실험 규모(C 1e18~1e21)에서 수요는 작다"), allow_stub=False)
+    # The figure IS the defect: allowed behind the marker.
+    check("review", rec("criterion 은 5% 대역인데 falsifier 는 15% 다 [figure-is-the-defect]"),
+          allow_stub=False)
+    # Structure without figures passes.
+    check("review", rec("반증 조건이 공개 대체물 없는 자료로만 판정된다"), allow_stub=False)
+
+
+def test_a_question_defect_reject_must_carry_a_pattern(tmp_path):
+    """The registry is keyed on it; without one the trap cannot recur into it."""
+    from if_core.semantic import assert_role_output as check
+
+    with pytest.raises(SemanticError, match="pattern"):
+        check("review", {"recommendations": [{
+            "question_id": "Q-1", "decision": "reject",
+            "reason": "반증 조건이 원리적으로 도달 불가능한 자료를 전제한다", "reason_kind": "question_defect"}]},
+            allow_stub=False)
+    # our_capacity does not feed the loop, so it needs no pattern.
+    check("review", {"recommendations": [{
+        "question_id": "Q-1", "decision": "reject",
+        "reason": "우리에게 다중 노드 클러스터 접근권이 없다", "reason_kind": "our_capacity"}]},
+        allow_stub=False)

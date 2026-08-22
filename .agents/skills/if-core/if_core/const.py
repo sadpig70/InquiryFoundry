@@ -79,6 +79,10 @@ OMIT_STATUS = {
     "failed", "blocked", "cancelled", "interrupted", "timed_out", "protocol_error",
 }
 
+# Below this a returning question is a different one, not the same asked twice.
+# 0.18 was measured on the live10g repair; 0.40 leaves room without reaching
+# TH_PAIR (0.55), where a seed is called a repeat.
+TH_REPAIR = 0.40
 TH_MEAN = 0.40
 TH_PAIR = 0.55
 PRIOR_N = 50

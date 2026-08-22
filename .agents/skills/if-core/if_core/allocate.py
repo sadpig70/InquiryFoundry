@@ -54,12 +54,17 @@ def rotate_kind(ev: str) -> str:
     return EVIDENCE_KINDS[(EVIDENCE_KINDS.index(ev) + 1) % len(EVIDENCE_KINDS)]
 
 
-def build_allocation(brief: dict, lwars: list[dict], avoid: list[str] | None = None) -> dict:
+def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
+    """`avoid` is `{patterns, recent_reasons}`; a bare list is read as reasons."""
     families = {vendor_family(x) for x in lwars}
     if brief.get("mode", "normal") == "normal" and len(families) < 2:
         raise Blocked("need >= 2 vendor_family for normal mode")
     kinds = list(brief.get("evidence_hints") or {}) or list(EVIDENCE_KINDS)
-    avoid = list(avoid or [])
+    if isinstance(avoid, dict):
+        patterns = list(avoid.get("patterns") or [])
+        avoid = list(avoid.get("recent_reasons") or [])
+    else:
+        patterns, avoid = [], list(avoid or [])
     offset = run_operator_offset(brief)
     table, used = {}, set()
     for i, lwar in enumerate(lwars):
@@ -88,6 +93,9 @@ def build_allocation(brief: dict, lwars: list[dict], avoid: list[str] | None = N
             # them, and RUN-20260819-live4b reproduced exactly the two traps
             # whose reasons had been routed to a different LWAR.
             "avoid_patterns": list(avoid),
+            # Recurring traps, abstracted to their structure. Persist across
+            # runs where the verbatim reasons above do not.
+            "avoid_registry": list(patterns),
             # A standing rule for every generator, unlike avoid_patterns, which
             # is a list of things that already went wrong. The brief has carried
             # this field since the schema was written and nothing ever read it,

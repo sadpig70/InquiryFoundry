@@ -250,6 +250,11 @@ SCHEMAS: dict[str, dict] = {
                         "decision": {"enum": ["adopt", "reject", "defer"]},
                         "reason": _str(),
                         "reason_kind": {"enum": REASON_KINDS},
+                        # One line naming the *structure* of the defect, with no
+                        # figures, scales, resources or dataset names in it. The
+                        # registry is keyed on this, and it is what survives a
+                        # mass rejection that flushes the verbatim window.
+                        "pattern": _str(),
                         "informational": {"type": "boolean"},
                         "checks": {"type": "object"},
                     },
@@ -284,6 +289,7 @@ SCHEMAS: dict[str, dict] = {
                         "decision": {"enum": ["adopt", "reject", "defer", "pending"]},
                         "reason": _str(),
                         "reason_kind": {"enum": REASON_KINDS},
+                        "pattern": _str(),
                         "informational": {"type": "boolean"},
                         "bucket": {"enum": ["pareto", "dissent", "informational"]},
                         "checks": {"type": "object"},
@@ -328,6 +334,7 @@ SCHEMAS: dict[str, dict] = {
             # human's after the fact.
             "decided_by": {"enum": REVIEWER_KINDS},
             "reason_kind": {"enum": REASON_KINDS},
+            "pattern": _str(),
         },
     },
     "edges_rec": {

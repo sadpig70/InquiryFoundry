@@ -201,26 +201,106 @@ class Store:
         validate_obj("decision_rec", rec)
         append_jsonl(self.decisions, rec)
 
-    def query_avoid_patterns(self, domain: str, n: int = 8) -> list[str]:
-        """What the next run is told to avoid: defects in questions, only.
+    # Fable 5's decision, 2026-08-22. Untested initial values by its own
+    # account, to be moved by the verification it specified — not by taste.
+    REGISTRY_ENTER_RUNS = 2      # seen in this many distinct runs to be entered
+    REGISTRY_DISUSE_RUNS = 4     # no new instance within this many closed runs
+    REGISTRY_CAP = 12            # per domain
+    RECENT_RUNS = 3              # verbatim window spans this many closed runs
+    RECENT_PER_RUN = 3           # at most this many reasons from any one run
 
-        A verdict can be about the question or about us. "The falsifier needs
-        data nobody can obtain" is the first; "that grid costs tens of millions
-        and we are not a frontier lab" is the second, and teaching a generator
-        the second is how a question about the world became a question about
-        our budget between RUN-20260820-live6 and RUN-20260821-live8.
-
-        Rows written before this axis existed carry no `reason_kind`. They are
-        read as question defects, which is exactly how they behaved, rather
-        than reclassified after the fact by guessing at someone's wording.
-        """
-        rows = [
+    def _defect_rows(self, domain: str) -> list[dict]:
+        return [
             r for r in load_jsonl(self.decisions)
-            if r.get("decision") == "reject" and r.get("domain") == domain and r.get("reason")
-            and not r.get("informational")
+            if r.get("decision") == "reject" and r.get("domain") == domain
+            and r.get("reason") and not r.get("informational")
             and (r.get("reason_kind") or "question_defect") == "question_defect"
         ]
-        return [r["reason"] for r in rows[-n:]]
+
+    @staticmethod
+    def _run_order(rows: list[dict]) -> list[str]:
+        """Closed runs oldest-first. The log is append-only, so its order is
+        the order runs closed."""
+        order = []
+        for r in rows:
+            rid = r.get("run_id")
+            if rid and rid not in order:
+                order.append(rid)
+        return order
+
+    def avoid_registry(self, domain: str) -> list[dict]:
+        """Patterns that recurred, kept until they fall out of use.
+
+        Recomputed from `decisions.jsonl` every time rather than maintained
+        incrementally. Fable flagged a second source of truth as the risk in
+        its own design; deriving it means there is only ever one.
+
+        A mass rejection cannot flush this: entry is by recurrence across runs,
+        and exit is by a pattern going unseen for `REGISTRY_DISUSE_RUNS` closed
+        runs — not by being pushed out of a fixed-size queue.
+        """
+        rows = [r for r in self._defect_rows(domain) if (r.get("pattern") or "").strip()]
+        order = self._run_order(rows)
+        recent_runs = set(order[-self.REGISTRY_DISUSE_RUNS:])
+        seen: dict[str, dict] = {}
+        for r in rows:
+            key = r["pattern"].strip()
+            entry = seen.setdefault(key, {"pattern": key, "runs": []})
+            if r.get("run_id") and r["run_id"] not in entry["runs"]:
+                entry["runs"].append(r["run_id"])
+        entries = [
+            e for e in seen.values()
+            if len(e["runs"]) >= self.REGISTRY_ENTER_RUNS
+            and e["runs"][-1] in recent_runs
+        ]
+        # Oldest last-sighting drops first when over the cap.
+        entries.sort(key=lambda e: order.index(e["runs"][-1]))
+        return entries[-self.REGISTRY_CAP:]
+
+    def write_avoid_registry(self, domain: str) -> Path:
+        """Publish the derived view. Nothing reads this file — it exists so a
+        person can see what the loop is carrying."""
+        path = self.root / "memory" / "avoid_registry.yaml"
+        doc = load_yaml(path) if path.is_file() else None
+        doc = doc if isinstance(doc, dict) else {
+            "schema_version": "if.avoid-registry.v1", "domains": {}}
+        doc.setdefault("domains", {})[domain] = {
+            "patterns": self.avoid_registry(domain),
+            "rebuilt_at": now_iso(),
+        }
+        atomic_write_yaml(path, doc)
+        return path
+
+    def query_avoid_patterns(self, domain: str) -> dict:
+        """Two blocks, because one shape cannot carry both jobs.
+
+        `patterns` persists: entry by recurrence, exit by disuse, so a mass
+        rejection does not flush what several runs agreed was a trap.
+        `recent_reasons` is verbatim, because that specificity is what made a
+        rejected question come back repaired — RUN-20260822-live10g answered a
+        named contradiction in its criterion with equal-size subgrids and an
+        equivalence margin, a different question rather than the same one again.
+
+        Stratified by run, at most `RECENT_PER_RUN` from any one, so a single
+        thirteen-reject close takes a third of the window and not all of it.
+        Within a run, reasons whose pattern the registry already carries go
+        last: the registry covers them, so their prose is the redundant part.
+        """
+        rows = self._defect_rows(domain)
+        order = self._run_order(rows)
+        registered = {e["pattern"] for e in self.avoid_registry(domain)}
+        recent, by_run = [], {}
+        for r in rows:
+            by_run.setdefault(r.get("run_id"), []).append(r)
+        for run_id in order[-self.RECENT_RUNS:]:
+            picks = by_run.get(run_id) or []
+            fresh = [r for r in picks if (r.get("pattern") or "").strip() not in registered]
+            covered = [r for r in picks if (r.get("pattern") or "").strip() in registered]
+            recent.extend((fresh + covered)[: self.RECENT_PER_RUN])
+        return {
+            "patterns": [e["pattern"] for e in self.avoid_registry(domain)],
+            "recent_reasons": [r["reason"] for r in recent],
+        }
 
     def append_dissent(self, rec: dict) -> None:
         append_jsonl(self.dissent_log, rec)

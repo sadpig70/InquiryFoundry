@@ -10,7 +10,8 @@ from pathlib import Path
 from .allocate import build_allocation, inject_divergence, vendor_family
 from .bus import ensure_jail, publish_collect
 from .compose import compose, stamp_lineage
-from .const import EXCLUDE_ADAPTERS, EXCLUDE_FAMILIES, MECH, PRIOR_N, TH_MEAN, TH_PAIR
+from .const import (EXCLUDE_ADAPTERS, EXCLUDE_FAMILIES, MECH, PRIOR_N,
+                    TH_MEAN, TH_PAIR, TH_REPAIR)
 from .schema import SchemaError, validate_obj
 from .contrarian import cross_examine
 from .generate import generate
@@ -29,6 +30,7 @@ class Run:
     observed_statuses: list[str] = field(default_factory=list)
     dropped_seeds: list[dict] = field(default_factory=list)
     repeat_seeds: list[dict] = field(default_factory=list)
+    repaired_seeds: list[dict] = field(default_factory=list)
 
 
 def init_run(store: Store, brief: dict) -> Run:
@@ -271,7 +273,46 @@ def explore_loop_pao(store: Store, run: Run, alloc: dict, lwars: list, packs=Non
     run.observed_statuses.extend(statuses)
     seeds = flatten_seeds(accepted, run.id, run.dropped_seeds)
     note_repeats(store, run, seeds)
+    note_repairs(store, run, seeds)
     return seeds
+
+
+def note_repairs(store: Store, run: Run, seeds: list) -> None:
+    """Count questions that came back with the named defect fixed.
+
+    An avoid pattern turned out to do more than forbid. RUN-20260822-live10g's
+    OP-SCALE question answered a reason that named a direction contradiction in
+    its criterion — equal-size subgrids, an equivalence margin, Jaccard 0.18
+    against the question that was rejected. Fable calls that the loop's success
+    mode rather than a repeat, and made the verbatim window's survival
+    conditional on this count holding up.
+
+    A seed counts as repaired when the most recent rejected question from the
+    same operator is close enough to be the same subject but far enough not to
+    be the same question.
+    """
+    domain = run.brief.get("domain")
+    prior = [
+        q for q in store.load_status("REJECTED")
+        if (q.get("lineage") or {}).get("domain") == domain and q.get("operator")
+    ]
+    if not prior:
+        return
+    by_operator: dict[str, dict] = {}
+    for q in prior:
+        by_operator[q["operator"]] = q          # log order: last wins
+    for s in seeds:
+        was = by_operator.get(s.get("operator"))
+        if not was:
+            continue
+        sim = jaccard(token_set(s), token_set(was))
+        if 0.0 < sim < TH_REPAIR:
+            run.repaired_seeds.append({
+                "local_id": s["local_id"],
+                "operator": s.get("operator"),
+                "repaired_from": was["question_id"],
+                "similarity": round(sim, 3),
+            })
 
 
 def note_repeats(store: Store, run: Run, seeds: list) -> None:
@@ -465,6 +506,8 @@ def inquiry_cycle(brief: dict, lwars: list[dict], if_root=None, packs=None, pao:
         "unjudged": [s["local_id"] for s in seeds if s["local_id"] not in cards],
         # Seeds that repeat an earlier SCORED/ADOPTED question in this domain.
         "repeat_seeds": run.repeat_seeds,
+        # Rejected questions that came back with the named defect fixed.
+        "repaired_seeds": run.repaired_seeds,
     }
     atomic_write_yaml(run.dir / "report.yaml", report)
     return report

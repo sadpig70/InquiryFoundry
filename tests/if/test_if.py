@@ -537,7 +537,7 @@ def test_informational_reasons_never_become_avoid_patterns(tmp_path):
         "reason": "kept for the record, not a rejection", "run_id": "R-1",
         "informational": True,
     })
-    assert st.query_avoid_patterns("scaling") == ["genuine defect in the premise"]
+    assert st.query_avoid_patterns("scaling")["recent_reasons"] == ["genuine defect in the premise"]
 
 
 def test_every_slot_receives_every_avoid_pattern():
@@ -940,3 +940,52 @@ def test_rejudge_is_a_noop_when_nothing_is_unscored(tmp_path):
                    for i, v in enumerate(("openai", "google", "xai"), start=1)])
     assert out["status"] == "nothing_to_rejudge"
     assert out["rescued"] == []
+
+
+def test_repaired_seeds_are_counted_separately_from_repeats(tmp_path):
+    """An avoid pattern turned out to do more than forbid: RUN-20260822-live10g
+    answered a reason that named a direction contradiction and came back with
+    the flaw fixed at Jaccard 0.18 — a different question on the same subject.
+    Fable made the verbatim window's survival conditional on this count, so it
+    has to be measured rather than inferred."""
+    from if_core.cycle import Run, note_repairs
+    from if_core.compose import compose, stamp_lineage
+
+    store = Store(tmp_path)
+    run_dir = tmp_path / "runs" / "RUN-P"
+    run_dir.mkdir(parents=True)
+    rejected = _compose_seed("LWAR1-01")
+    compose(store, run_dir, "RUN-P", [rejected],
+            {"LWAR1-01": {"verdict": "KILLED", "local_id": "LWAR1-01", "attacks": []}},
+            {}, {"papers": ["papers/kaplan2020"]}, "normal")
+
+    # Same operator, same subject, different question.
+    repaired = _compose_seed("LWAR1-02")
+    repaired["question"] = ("does the fitted exponent hold when subgrids are matched "
+                            "on sample size and judged against an equivalence band?")
+    repaired["question_norm"] = ("does the fitted exponent hold when subgrids are matched "
+                                 "on sample size and judged against an equivalence band")
+    run = Run(id="RUN-Q", dir=run_dir, brief={"domain": "scaling"}, nonce=b"x" * 32)
+    note_repairs(store, run, [stamp_lineage(repaired, "LWAR1", "RUN-Q")])
+
+    assert len(run.repaired_seeds) == 1
+    assert run.repaired_seeds[0]["operator"] == "OP-BOUND"
+    assert run.repaired_seeds[0]["similarity"] < 0.4
+
+
+def test_an_unchanged_question_is_a_repeat_not_a_repair(tmp_path):
+    """The two must not blur: one is the loop working, the other is it stalling."""
+    from if_core.cycle import Run, note_repairs
+    from if_core.compose import compose, stamp_lineage
+
+    store = Store(tmp_path)
+    run_dir = tmp_path / "runs" / "RUN-P"
+    run_dir.mkdir(parents=True)
+    rejected = _compose_seed("LWAR1-01")
+    compose(store, run_dir, "RUN-P", [rejected],
+            {"LWAR1-01": {"verdict": "KILLED", "local_id": "LWAR1-01", "attacks": []}},
+            {}, {"papers": ["papers/kaplan2020"]}, "normal")
+
+    run = Run(id="RUN-Q", dir=run_dir, brief={"domain": "scaling"}, nonce=b"x" * 32)
+    note_repairs(store, run, [stamp_lineage(_compose_seed("LWAR1-02"), "LWAR1", "RUN-Q")])
+    assert run.repaired_seeds == []
