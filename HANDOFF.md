@@ -206,7 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
-| `RUN-20260822-live10g` | **완주**, `human=awaiting_human` (2026-08-22). live8 과 배정이 동일하도록 `brief_id` 를 골라 세운 통제 비교. seed 9 / qo 9 / scored 9, 9/9 succeeded, 손실 0. **예산 조항을 빼도 `OP-SCALE` 규모가 돌아오지 않았다** — 오염원이 브리프에서 회피 창으로 이동했다(§7.14) |
+| `RUN-20260822-live10g` | **종결** (2026-08-22, `adopt 9 / reject 0`, §7.16). 완주, `human=awaiting_human` (2026-08-22). live8 과 배정이 동일하도록 `brief_id` 를 골라 세운 통제 비교. seed 9 / qo 9 / scored 9, 9/9 succeeded, 손실 0. **예산 조항을 빼도 `OP-SCALE` 규모가 돌아오지 않았다** — 오염원이 브리프에서 회피 창으로 이동했다(§7.14) |
 | `RUN-20260821-live9` | **완주**, `human=awaiting_human` (2026-08-21). 예산 조항을 뺀 `constraints` 로 돌린 첫 런. seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds`·`unjudged`·`repeat_seeds` 모두 0. **`OP-2ND`/`OP-REGIME`/`OP-ADV` 첫 등장**(연산자 회전). 핵심 지표 `OP-SCALE` 은 회전 때문에 배정되지 않아 측정 실패(§7.12). 자료 `_workspace/if-live9/review-brief.md` |
 | `RUN-20260821-live8` | **완주**, `human=awaiting_human` (2026-08-21). 로스터 codex/openai · antigravity/google · **grok/xai**(신규). seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds` 0, `unjudged` 0 — 손실 없는 첫 런. 제약 효과 재현(자원 초과 0건, 등가 마진 9/9). **LWAR2 가 live7b 문항 3건을 유사도 1.00 으로 재생성** — `--pao` 경로에 중복 억제가 없다(§7.10). 자료 `_workspace/if-live8/review-brief.md` |
 | `RUN-20260820-live7b` | **완주(손상)**, `human=awaiting_human` (2026-08-20). 브리프 `constraints` 3건을 처음 투입한 런. seed 9 / qo 9 / **scored 5**, `protocol_valid` true 이나 `slo_scored_ge_8` false — GLM 크레딧 소진으로 judge 1건 타임아웃. 제약 효과: 자원 초과 설계 9/9 해소, 기각 조건 9/9 등가 마진(§7.10). 판정 못 받은 4건은 `DORMANT` 로 복구(§7.9). 검토 대상 **5문항**, 자료 `_workspace/if-live7/review-brief.md` |
@@ -973,6 +973,41 @@ git 제외**이므로 아래가 추적되는 기록이다. 제시한 문제는 �
   그때는 자유 문장이 아니라 **고정 분류표(taxonomy)** 로 바꾸는 후속 결정이 필요하다.
 - **인간 리뷰어의 규율은 강제 수단이 없다.** 누출 검증이 악화되면 `decided_by` 로
   인간 사유인지 기계 사유인지 갈라 확인하라.
+
+## 7.16 수리 고리는 예외가 아니라 지배적 양상이다 (2026-08-22, live10g 마감)
+
+§7.15 를 구현하고 live10g 를 새 계약으로 마감했다. 결과: **`adopt 9 / reject 0`.**
+이전 분포(2/5, 3/9, 5/9)와 크게 다르다.
+
+degenerate 리뷰가 아니다. 사유가 360~450자로 구체적이고, 대부분이 이렇게 시작한다:
+
+> *"이전 런에서 기각된 신뢰구간 확장 문항의 **수리본**으로, 치명 결함이었던 방향 자기모순이
+> 고쳐졌고 표본 크기를 N=50으로 맞춰 점 수 교란도 통제에 들어왔다"*
+> *"두 런에 걸쳐 기각된 어휘 크기 공변량 문항의 수리본이며, 기각 사유였던 식별 불가와
+> 분석 단위 오류를 정확히 해소했다"*
+
+**live10g 는 대부분이 이전 거부 질문의 수리본이었고, 리뷰어가 그것을 알아보고
+지적됐던 결함이 실제로 고쳐졌는지 검증했다.** §7.14 에서 한 건으로 관측한 수리가
+런 전체 규모로 재현된 것이다.
+
+### 그래서 생긴 문제 — 새 계약이 한 번도 발동하지 않았다
+
+`pattern` 은 **`question_defect` 거부에만** 요구되고, 쓰기 린트도 reject/defer 사유에만 걸린다.
+**거부가 0건이면 새 기계장치 전체가 우회된다.** 등록부는 여전히 비어 있고(`patterns 0`),
+린트 거부 로그도 0이며, Fable 이 검증 3항에서 *"린트 거부 로그가 0이면 린트가 작동하지 않는
+것"* 이라 한 상태와 **구별되지 않는다.** 이번 마감은 계약의 실행 가능성조차 시험하지 못했다.
+
+### 부수 관찰 — 조건부 채택을 담을 곳이 없다
+
+Fable 은 채택마다 *"채택 조건 — 최소 3개 tier 로 확장할 것, …"* 을 붙였다. 스키마에
+그 자리가 없어 **`reason` 본문에 섞여 들어간다.** 채택된 질문을 실제로 실행할 때
+이 조건들이 어디에도 구조화돼 있지 않다.
+
+### 해석 — 고리가 도는 것과 넓어지는 것은 다르다
+
+수리가 작동한다는 것은 되먹임이 산다는 증거다. 그러나 **질문 공간이 이전 질문의 수리본으로
+수렴하고 있다**는 뜻이기도 하다. Fable 이 §7.15 에서 *"함정은 제거되지만 질문이 같은 이웃에
+머문다"* 고 한 긴장이 여기서 관측된다. 채택률이 올라간 것을 성공으로만 읽으면 안 된다.
 
 ## 8. 다음 작업 (우선순위)
 
