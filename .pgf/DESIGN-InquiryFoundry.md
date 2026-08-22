@@ -2,7 +2,7 @@
 
 **Status** designing · **Notation** PG v1.4 + PGF v2.6 · **Scale** Level 3 (22 nodes)
 **Runtime** Claude Code CLI OA + 이종 CLI LWAR (PAO file bus)
-**Draft sources (non-normative)** `_legacy/InquiryFoundry_DESIGN.md`, `_legacy/*`
+**Draft sources (non-normative)** `_legacy/InquiryFoundry_DESIGN.md`, `_legacy/*` — **로컬 전용이며 저장소에 없다.** 이 문서가 권위이고 초안은 참고 이력이다.
 **Review** `.pgf/REVIEW-InquiryFoundry.md` (design-review cycle 3 applied)
 **Upgrade input** `_workspace/IF_upgrade_plan.md` (D19–D21 accepted)
 

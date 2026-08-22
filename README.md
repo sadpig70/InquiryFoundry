@@ -23,7 +23,6 @@ output = Pareto portfolio of Question Objects
 | [`.pgf/REVIEW-InquiryFoundry.md`](.pgf/REVIEW-InquiryFoundry.md) | 3시각 design-review, 개정 기록 |
 | [`.pgf/WORKPLAN-InquiryFoundry.md`](.pgf/WORKPLAN-InquiryFoundry.md) | 실행 계획 @v:0.2.3 |
 | [`.pgf/status-InquiryFoundry.json`](.pgf/status-InquiryFoundry.json) | 노드 상태 (22 nodes) |
-| [`_legacy/`](_legacy/) | 탐구 원본. 참고만 |
 | [`docs/PAO_TechSpec.md`](docs/PAO_TechSpec.md) | 의존 런타임 PAO 기술 개요 |
 
 초안과 설계가 다르면 **`.pgf/DESIGN-InquiryFoundry.md`를 따른다.**
@@ -52,8 +51,7 @@ Brief → 이종 배분(Allocate)
 .pgf/                 # 권위 설계·검토·상태
 .agents/skills/       # 로컬 스킬 (pg, pgf, pao-oa, pao-lwar, …)
 docs/                 # 초안·PAO 스펙
-_legacy/              # 탐구 원본
-_workspace/           # 작업 스크래치
+_workspace/           # 작업 스크래치 (로컬 전용)
 tools/                # PAO 검증·도그푸드 스크립트
 AGENTS.md             # 에이전트 운영 계약
 ```

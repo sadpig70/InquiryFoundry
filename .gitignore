@@ -19,6 +19,7 @@ venv/
 
 # Local scratch / operator IDs / probe leftovers
 _workspace/
+_legacy/
 .codex/
 
 # OS / editor
