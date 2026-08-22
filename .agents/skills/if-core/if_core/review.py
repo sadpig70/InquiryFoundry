@@ -142,13 +142,14 @@ def review_packet(store: Store, run_dir: Path,
     if constraints is None:
         brief = load_yaml(run_dir / "brief.yaml") or {}
         constraints = list(brief.get("constraints") or [])
-    # The registry travels with the packet so a reviewer can reuse an existing
-    # line for a defect already named. Nothing else keeps the vocabulary from
-    # drifting into a list of near-duplicates, which is the failure Fable
-    # flagged as the one it could not predict.
+    # The taxonomy travels with the packet. It was domain-scoped here while the
+    # generator already received the global codes, so RUN-20260822-live14's
+    # reviewer was asked to pick a code and handed an empty list — and wrote
+    # free text again, which was the failure the codes exist to stop. Codes are
+    # global because they name structural defects in an argument.
     brief = load_yaml(run_dir / "brief.yaml") or {}
     domain = brief.get("domain") or ""
-    known = [e["pattern"] for e in store.avoid_registry(domain)] if domain else []
+    known = store.query_avoid_patterns(domain)["patterns"] if domain else []
     items = []
     for d in doc["decisions"]:
         q = store.load_question(d["question_id"]) or {}
@@ -226,13 +227,51 @@ def request_review(store: Store, run_dir: Path, lwar_id: str,
                 "round_n": round_n,
                 "recommendations": outbox["recommendations"],
                 "observed_statuses": statuses}
-    result = apply_recommendation(run_dir, outbox, recommended_by)
+    result = apply_recommendation(store, run_dir, outbox, recommended_by)
     result["observed_statuses"] = statuses
     result["round_n"] = round_n
     return result
 
 
-def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> dict:
+def require_known_code(store: Store, rec: dict) -> None:
+    """A rejection's pattern must choose from the list, or argue with it.
+
+    Matching moved from string equality to selection precisely because the same
+    reviewer wrote one defect two ways. Selection only binds if something checks
+    that a code was actually selected — otherwise free text returns, which is
+    what RUN-20260822-live14 did.
+
+    `NEW` stays available, at the price Fable set: name the closest existing
+    code and why it does not fit. The price is the point — it forces the writer
+    to look at the list before adding to it.
+    """
+    codes = store.avoid_codes()
+    if not codes["ratified"]:
+        return
+    kind = rec.get("reason_kind") or (
+        "our_capacity" if rec.get("decision") == "defer" else "question_defect")
+    if rec.get("decision") != "reject" or kind != "question_defect":
+        return
+    known = {c["code"] for c in codes["codes"]}
+    code = Store.pattern_code(rec.get("pattern") or "")
+    if code in known:
+        return
+    if code == "NEW":
+        closest = (rec.get("closest_code") or "").strip()
+        if closest not in known:
+            raise Blocked(
+                "%s: a NEW pattern must name the closest existing code in "
+                "closest_code (one of: %s)" % (rec["question_id"], ", ".join(sorted(known))))
+        if len((rec.get("pattern") or "")) < len("NEW — ") + 20:
+            raise Blocked("%s: a NEW pattern must say why %s does not fit"
+                          % (rec["question_id"], closest))
+        return
+    raise Blocked(
+        "%s: pattern must start with a known code or NEW, got %r. Known: %s"
+        % (rec["question_id"], code, ", ".join(sorted(known))))
+
+
+def apply_recommendation(store: Store, run_dir: Path, outbox: dict, recommended_by: str) -> dict:
     """Fold a reviewer LWAR's recommendation into review.yaml.
 
     `reviewer` is deliberately left empty. `preflight_close` refuses a run
@@ -257,6 +296,7 @@ def apply_recommendation(run_dir: Path, outbox: dict, recommended_by: str) -> di
             continue
         if not (rec.get("reason") or "").strip():
             raise Blocked("empty reason for %s" % d["question_id"])
+        require_known_code(store, rec)
         d["decision"] = rec["decision"]
         d["reason"] = rec["reason"]
         # Absent means the verdict is about the question. A reviewer that means

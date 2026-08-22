@@ -100,7 +100,7 @@ def test_a_recommendation_cannot_close_a_run(reviewed_run):
     still will not close, because `reviewer` is empty and preflight_close
     refuses that. Nothing here depends on the reviewer being honest."""
     store, run_dir, qos = reviewed_run
-    out = apply_recommendation(run_dir, _outbox(qos), "fable-5")
+    out = apply_recommendation(store, run_dir, _outbox(qos), "fable-5")
 
     assert out["applied"] == 2
     doc = yaml.safe_load((run_dir / "review.yaml").read_text(encoding="utf-8"))
@@ -117,7 +117,7 @@ def test_ratifying_lets_it_close_and_records_who_decided(reviewed_run):
     """A person putting their name on it is what unlocks the run, and the log
     keeps the distinction: these reasons feed the next run's avoid_patterns."""
     store, run_dir, qos = reviewed_run
-    apply_recommendation(run_dir, _outbox(qos), "fable-5")
+    apply_recommendation(store, run_dir, _outbox(qos), "fable-5")
     ratified = ratify(run_dir, "Jung Wook Yang")
     assert ratified["reviewer_kind"] == "human_ratified"
 
@@ -151,7 +151,7 @@ def test_a_recommendation_must_cover_every_open_decision(reviewed_run):
     partial = _outbox(qos)
     partial["recommendations"] = partial["recommendations"][:1]
     with pytest.raises(Blocked, match="no recommendation for"):
-        apply_recommendation(run_dir, partial, "fable-5")
+        apply_recommendation(store, run_dir, partial, "fable-5")
 
 
 def test_a_recommendation_for_another_run_is_refused(reviewed_run):
@@ -159,7 +159,7 @@ def test_a_recommendation_for_another_run_is_refused(reviewed_run):
     wrong = _outbox(qos)
     wrong["run_id"] = "RUN-OTHER"
     with pytest.raises(Blocked, match="RUN-OTHER"):
-        apply_recommendation(run_dir, wrong, "fable-5")
+        apply_recommendation(store, run_dir, wrong, "fable-5")
 
 
 def test_a_verdict_without_an_argument_is_refused():
@@ -267,7 +267,7 @@ def test_a_capacity_verdict_does_not_teach_the_next_run(reviewed_run):
         "reason": "다중 노드 클러스터 접근권이 우리에게 없다. 질문 자체에는 결함이 없다.",
         "reason_kind": "our_capacity",
     })
-    apply_recommendation(run_dir, out, "fable-5")
+    apply_recommendation(store, run_dir, out, "fable-5")
     ratify(run_dir, "Jung Wook Yang")
     close_review(store, run_dir)
 
@@ -310,7 +310,7 @@ def test_a_delegated_close_is_not_recorded_as_a_read_one(reviewed_run):
     exactly where it matters, which ones a person actually looked at — and
     these reasons feed the next run's avoid_patterns."""
     store, run_dir, qos = reviewed_run
-    apply_recommendation(run_dir, _outbox(qos), "fable-5")
+    apply_recommendation(store, run_dir, _outbox(qos), "fable-5")
     out = ratify(run_dir, "Jung Wook Yang", delegated=True)
     assert out["reviewer_kind"] == "delegated"
 
@@ -329,7 +329,7 @@ def test_reopen_adds_recovered_questions_without_disturbing_settled_ones(reviewe
 
     store, run_dir, qos = reviewed_run
     # First pass: decided and closed.
-    apply_recommendation(run_dir, _outbox(qos, decision="reject",
+    apply_recommendation(store, run_dir, _outbox(qos, decision="reject",
                                           reason="반증 조건이 설계상 도달 불가능하다."), "fable-5")
     ratify(run_dir, "Jung Wook Yang", delegated=True)
     first = close_review(store, run_dir)
@@ -598,3 +598,58 @@ def test_a_code_that_falls_out_of_use_stops_being_carried(tmp_path):
     assert "DUP-RESUBMIT" in store.dormant_codes()
     carried = [p.split(" —")[0] for p in store.query_avoid_patterns("scaling")["patterns"]]
     assert carried == ["PREDETERMINED"]
+
+
+def test_a_reject_must_choose_a_code_once_the_taxonomy_is_in_force(reviewed_run, tmp_path):
+    """Matching moved from string equality to selection because the same
+    reviewer wrote one defect two ways. Selection only binds if something checks
+    that a code was selected: RUN-20260822-live14 was asked for a code, handed
+    an empty list by a wiring gap, and wrote free text again."""
+    store, run_dir, qos = reviewed_run
+    _write_codes(tmp_path, ratified=True, codes=("UNREACHABLE-FALSIFIER", "DUP-RESUBMIT"))
+    out = _outbox(qos, decision="reject", reason="반증 조건이 공개 설정에서 닫힌 설계다")
+    for r in out["recommendations"]:
+        r["reason_kind"] = "question_defect"
+        r["pattern"] = "인과 개입이 공개 대체물 없는 새 데이터 수집에 묶여 있다"
+
+    with pytest.raises(Blocked, match="known code or NEW"):
+        apply_recommendation(store, run_dir, out, "fable-5")
+
+    for r in out["recommendations"]:
+        r["pattern"] = "UNREACHABLE-FALSIFIER — 공개 대체물 없는 새 수집에 묶임"
+    assert apply_recommendation(store, run_dir, out, "fable-5")["applied"] == 2
+
+
+def test_a_new_code_costs_an_argument_with_the_list(reviewed_run, tmp_path):
+    """NEW stays available at the price Fable set — name the closest code and
+    why it does not fit. The price is the point: it forces a look at the list
+    before adding to it."""
+    store, run_dir, qos = reviewed_run
+    _write_codes(tmp_path, ratified=True, codes=("UNREACHABLE-FALSIFIER",))
+    out = _outbox(qos, decision="reject", reason="이 도메인 고유의 새 결함이다")
+    for r in out["recommendations"]:
+        r["reason_kind"] = "question_defect"
+        r["pattern"] = "NEW — 주석자 화면 배치가 선호 레이블을 오염시키는 구조"
+
+    with pytest.raises(Blocked, match="closest_code"):
+        apply_recommendation(store, run_dir, out, "fable-5")
+
+    for r in out["recommendations"]:
+        r["closest_code"] = "UNREACHABLE-FALSIFIER"
+    assert apply_recommendation(store, run_dir, out, "fable-5")["applied"] == 2
+
+
+def test_the_reviewer_is_handed_the_same_codes_the_generator_gets(tmp_path, reviewed_run):
+    """The gap that caused live14: generator received eight codes, reviewer
+    received an empty domain-scoped registry."""
+    from if_core.review import review_packet
+
+    store, run_dir, _ = reviewed_run
+    _write_codes(tmp_path, ratified=True, codes=("DUP-RESUBMIT", "PREDETERMINED"))
+    (run_dir / "brief.yaml").write_text(
+        yaml.safe_dump({"brief_id": "RUN-R", "domain": "scaling"}, allow_unicode=True),
+        encoding="utf-8")
+
+    packet = review_packet(store, run_dir)
+    assert len(packet["known_patterns"]) == 2
+    assert packet["known_patterns"] == store.query_avoid_patterns("scaling")["patterns"]

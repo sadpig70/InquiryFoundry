@@ -129,7 +129,7 @@ def main() -> int:
             return 0
         if args.cmd == "recommend":
             outbox = yaml.safe_load(Path(args.outbox).read_text(encoding="utf-8"))
-            print(json.dumps(apply_recommendation(run_dir, outbox, args.by),
+            print(json.dumps(apply_recommendation(store, run_dir, outbox, args.by),
                              ensure_ascii=False, indent=2))
             return 0
         if args.cmd == "ratify":

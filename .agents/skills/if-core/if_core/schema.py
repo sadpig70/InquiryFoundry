@@ -255,6 +255,8 @@ SCHEMAS: dict[str, dict] = {
                         # registry is keyed on this, and it is what survives a
                         # mass rejection that flushes the verbatim window.
                         "pattern": _str(),
+                        # Required with a NEW pattern: the code it is closest to.
+                        "closest_code": _str(),
                         "informational": {"type": "boolean"},
                         "checks": {"type": "object"},
                     },
