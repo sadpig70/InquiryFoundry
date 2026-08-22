@@ -206,6 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260822-live11` | **종결** (2026-08-22). `adopt 6 / reject 2 / defer 1`. `repaired_seeds` 4 / `repeat_seeds` 0 / 새 영역 5. **`pattern` 과 쓰기 린트가 처음 발동**했고 거부 2건 모두 수치 없는 구조 서술로 왔다. 등록부는 2런 등재 조건이라 아직 비어 있다(§7.17) |
 | `RUN-20260822-live10g` | **종결** (2026-08-22, `adopt 9 / reject 0`, §7.16). 완주, `human=awaiting_human` (2026-08-22). live8 과 배정이 동일하도록 `brief_id` 를 골라 세운 통제 비교. seed 9 / qo 9 / scored 9, 9/9 succeeded, 손실 0. **예산 조항을 빼도 `OP-SCALE` 규모가 돌아오지 않았다** — 오염원이 브리프에서 회피 창으로 이동했다(§7.14) |
 | `RUN-20260821-live9` | **완주**, `human=awaiting_human` (2026-08-21). 예산 조항을 뺀 `constraints` 로 돌린 첫 런. seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds`·`unjudged`·`repeat_seeds` 모두 0. **`OP-2ND`/`OP-REGIME`/`OP-ADV` 첫 등장**(연산자 회전). 핵심 지표 `OP-SCALE` 은 회전 때문에 배정되지 않아 측정 실패(§7.12). 자료 `_workspace/if-live9/review-brief.md` |
 | `RUN-20260821-live8` | **완주**, `human=awaiting_human` (2026-08-21). 로스터 codex/openai · antigravity/google · **grok/xai**(신규). seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds` 0, `unjudged` 0 — 손실 없는 첫 런. 제약 효과 재현(자원 초과 0건, 등가 마진 9/9). **LWAR2 가 live7b 문항 3건을 유사도 1.00 으로 재생성** — `--pao` 경로에 중복 억제가 없다(§7.10). 자료 `_workspace/if-live8/review-brief.md` |
@@ -976,6 +977,10 @@ git 제외**이므로 아래가 추적되는 기록이다. 제시한 문제는 �
 
 ## 7.16 수리 고리는 예외가 아니라 지배적 양상이다 (2026-08-22, live10g 마감)
 
+> **⚠ 이 절 끝의 "질문 공간이 수리본으로 수렴한다" 는 한 런에서 끌어낸 성급한 추세다.**
+> live11 은 수리 4 / 반복 0 / **새 영역 5** 였다(§7.17). 수렴은 단조롭지 않다.
+
+
 §7.15 를 구현하고 live10g 를 새 계약으로 마감했다. 결과: **`adopt 9 / reject 0`.**
 이전 분포(2/5, 3/9, 5/9)와 크게 다르다.
 
@@ -1008,6 +1013,40 @@ Fable 은 채택마다 *"채택 조건 — 최소 3개 tier 로 확장할 것, �
 수리가 작동한다는 것은 되먹임이 산다는 증거다. 그러나 **질문 공간이 이전 질문의 수리본으로
 수렴하고 있다**는 뜻이기도 하다. Fable 이 §7.15 에서 *"함정은 제거되지만 질문이 같은 이웃에
 머문다"* 고 한 긴장이 여기서 관측된다. 채택률이 올라간 것을 성공으로만 읽으면 안 된다.
+
+## 7.17 새 계약이 처음 발동했다 — live11 (2026-08-22)
+
+`repaired_seeds` 가 계측된 첫 런이자, `pattern` 필수화와 쓰기 린트가 실제로 걸린 첫 마감이다.
+
+| | live11 |
+|---|---:|
+| 수리본(`repaired_seeds`) | 4 |
+| 반복(`repeat_seeds`) | 0 |
+| 이전 거부와 겹침 없음 | 5 |
+| 판정 | `adopt 6 / reject 2 / defer 1` |
+
+**§7.16 의 수렴 우려는 완화된다.** 절반 이상이 새 영역이고, `OP-SCALE` 은 거부됐던
+신뢰구간 폭 질문 대신 데이터 제약 영역(*"Chinchilla 처방 고유 토큰의 1000분의 1"*)으로 갔다.
+
+### 거부 2건 모두 `pattern` 을 달고 왔다
+
+> *"이미 채택된 문항의 부분 분석을 독립 문항으로 재제출했고, 결합 모형이 구성상 함의하는 부호를…"*
+> *"반사실이 고정하는 변수가 관측된 차이의 주원인이 아니어서 어느 결과가 나와도 가설을 판별하지…"*
+
+**둘 다 수치가 없다.** 결함의 구조만 서술한다 — 쓰기 규율이 지켜졌고 린트가 막을 것이 없었다.
+`decisions.jsonl` 에 `pattern` 보유 레코드가 처음 2행 생겼다(둘 다 live11).
+
+### 등록부는 아직 비어 있다 — 정상이다
+
+`patterns 0건`. 등재 조건이 **서로 다른 2개 런**이므로 live11 한 번으로는 오르지 않는다.
+같은 pattern 이 다음 런에서 다시 관측돼야 첫 항목이 등재된다.
+**Fable 의 검증 1·2항은 그때부터 측정 가능하다.**
+
+### `repaired` 지표의 한계 — 두 숫자를 같은 축에서 읽지 말 것
+
+`repaired_seeds` 는 *"같은 연산자의 가장 최근 거부 질문과 0 < 유사도 < TH_REPAIR"* 라는
+**토큰 겹침 대리 지표**다. live10g 에서 Fable 이 *"수리본"* 이라 판정한 9건은 **질문을 이해한
+결과**이고 같은 방식으로 잰 것이 아니다. **비교 기준선은 live11 부터**다.
 
 ## 8. 다음 작업 (우선순위)
 
