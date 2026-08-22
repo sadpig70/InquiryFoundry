@@ -212,6 +212,15 @@ def publish_collect(run_dir: Path, role: str, items: list, timeout_s: int,
             lid = res.get("lwar_id")
             if lid not in pending:
                 continue
+            # Match the task, not just the worker. `outgoing/` keeps every
+            # result a collect did not archive, so an older one for the same
+            # LWAR would satisfy the wait: RUN-20260822-live10g's review was
+            # marked succeeded off a stale result while the task was still
+            # sitting in claimed/, and the run died reading an outbox the
+            # worker had not written yet.
+            body_id = (res.get("result") or {}).get("task_id") or res.get("task_id")
+            if body_id and body_id != pending[lid]:
+                continue
             # `oa collect` nests the ResultContract under "result"; the status
             # lives there, not on the envelope. Reading it off the envelope
             # yielded "" for every collected result, so nothing ever matched

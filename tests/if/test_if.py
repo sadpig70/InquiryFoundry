@@ -15,6 +15,7 @@ sys.path.insert(0, str(CORE))
 
 from if_core.allocate import build_allocation, vendor_family
 from if_core.bus import (
+    propose_task_id,
     assert_visible,
     ensure_jail,
     lwar_script,
@@ -239,8 +240,13 @@ def test_publish_collect_reads_status_from_the_result_body(tmp_path):
                 {
                     "lwar_id": "LWAR1",
                     "result_file": "x.json",
-                    # The shape oa actually emits.
-                    "result": {"task_id": "t", "status": "succeeded"},
+                    # The shape oa actually emits. The id must be this task's:
+                    # publish_collect now refuses a result from another one.
+                    "result": {
+                        "task_id": propose_task_id("RUN-20260818-shape",
+                                                   "generate", "LWAR1", 0),
+                        "status": "succeeded",
+                    },
                 }
             ],
         }
@@ -989,3 +995,36 @@ def test_an_unchanged_question_is_a_repeat_not_a_repair(tmp_path):
     run = Run(id="RUN-Q", dir=run_dir, brief={"domain": "scaling"}, nonce=b"x" * 32)
     note_repairs(store, run, [stamp_lineage(_compose_seed("LWAR1-02"), "LWAR1", "RUN-Q")])
     assert run.repaired_seeds == []
+
+
+def test_publish_collect_ignores_a_result_from_another_task(tmp_path):
+    """`outgoing/` keeps every result a collect did not archive, and matching on
+    lwar_id alone let an older one satisfy the wait. RUN-20260822-live10g's
+    review was marked succeeded off a stale result while its task was still in
+    claimed/, and the run then died reading an outbox nobody had written."""
+    from if_core.bus import publish_collect
+
+    run_dir = tmp_path / "runs" / "RUN-S"
+    (run_dir / "jail").mkdir(parents=True)
+    calls = []
+
+    def runner(argv):
+        calls.append(argv[0])
+        if argv[0] == "send":
+            return {}
+        if argv[0] == "collect":
+            # A finished result for the same worker, from a different task.
+            return {"results": [{
+                "lwar_id": "LWAR4",
+                "result": {"task_id": "task-if-RUN-OLD-generate-LWAR4-r0",
+                           "status": "succeeded"},
+            }]}
+        return {}
+
+    accepted, statuses = publish_collect(
+        run_dir, "generate", [("LWAR4", {"role": "generate"})],
+        timeout_s=0, poll_s=0, runner=runner)
+
+    assert accepted == {}, "a stale result must not complete the pending task"
+    assert "succeeded" not in statuses
+    assert statuses == ["timed_out"]
