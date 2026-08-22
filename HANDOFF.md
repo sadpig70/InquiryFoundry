@@ -206,6 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260822-live12` | **종결** (2026-08-22). `adopt 4 / reject 5`. `repaired_seeds` 5 / `repeat_seeds` 0. **G-GROUND 실패 2건 — 코퍼스 밖 인용 시도**(소진 신호). pattern 5건이 쌓였으나 어휘 불일치로 **등록부 등재 0**(§7.18) |
 | `RUN-20260822-live11` | **종결** (2026-08-22). `adopt 6 / reject 2 / defer 1`. `repaired_seeds` 4 / `repeat_seeds` 0 / 새 영역 5. **`pattern` 과 쓰기 린트가 처음 발동**했고 거부 2건 모두 수치 없는 구조 서술로 왔다. 등록부는 2런 등재 조건이라 아직 비어 있다(§7.17) |
 | `RUN-20260822-live10g` | **종결** (2026-08-22, `adopt 9 / reject 0`, §7.16). 완주, `human=awaiting_human` (2026-08-22). live8 과 배정이 동일하도록 `brief_id` 를 골라 세운 통제 비교. seed 9 / qo 9 / scored 9, 9/9 succeeded, 손실 0. **예산 조항을 빼도 `OP-SCALE` 규모가 돌아오지 않았다** — 오염원이 브리프에서 회피 창으로 이동했다(§7.14) |
 | `RUN-20260821-live9` | **완주**, `human=awaiting_human` (2026-08-21). 예산 조항을 뺀 `constraints` 로 돌린 첫 런. seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds`·`unjudged`·`repeat_seeds` 모두 0. **`OP-2ND`/`OP-REGIME`/`OP-ADV` 첫 등장**(연산자 회전). 핵심 지표 `OP-SCALE` 은 회전 때문에 배정되지 않아 측정 실패(§7.12). 자료 `_workspace/if-live9/review-brief.md` |
@@ -1047,6 +1048,38 @@ Fable 은 채택마다 *"채택 조건 — 최소 3개 tier 로 확장할 것, �
 `repaired_seeds` 는 *"같은 연산자의 가장 최근 거부 질문과 0 < 유사도 < TH_REPAIR"* 라는
 **토큰 겹침 대리 지표**다. live10g 에서 Fable 이 *"수리본"* 이라 판정한 9건은 **질문을 이해한
 결과**이고 같은 방식으로 잰 것이 아니다. **비교 기준선은 live11 부터**다.
+
+## 7.18 pattern 어휘는 수렴하지 않았다 — Fable 이 예측한 그대로 (2026-08-22, live12)
+
+live11·live12 두 런에서 `pattern` 5건이 기록됐다. **등록부 등재는 0건이다.**
+
+| 런 | pattern |
+|---|---|
+| live11 | 이미 채택된 문항의 **부분 분석을 독립 문항으로 재제출**했고, 결합 모형이 구성상 함의하는 부호를… |
+| live12 | 직전 런에서 채택 권고된 문항과 **동일 구조 설계의 재제출** |
+
+**같은 결함이다.** 이미 채택된 질문을 다시 낸 것. 그런데 문장이 다르므로 **문자열 일치 키로는
+같은 pattern 이 아니다.** 등재 조건(서로 다른 2개 런에서 같은 pattern)이 영원히 성립하지 않는다.
+
+Fable 이 §7.15 에서 *확신하지 못한다*고 밝힌 셋 중 하나가 이것이다:
+
+> *"pattern 어휘가 수렴할지 모른다. 수렴하지 않으면 등록부는 비슷한 줄의 목록으로 퇴화하고,
+> 그때는 pattern 을 자유 문장이 아니라 **고정 분류표(taxonomy)** 로 바꾸는 후속 결정이 필요하다."*
+
+리뷰어에게 등록부를 보여 재사용을 유도하는 장치는 **등록부가 비어 있으면 작동하지 않는다** —
+보여줄 것이 없다. 초기 부트스트랩 구멍이다.
+
+### 부수 관측 — 리뷰어가 근거 오귀속을 잡았다
+
+live12 거부 사유 하나에 *"인용 주장에 **원 논문에 없는 내용이 섞인 근거 오귀속**"* 이 있다.
+§7.11 에서 `G-GROUND` 가 인용의 **존재**만 보고 **내용 정합성**은 못 본다고 기록한 그 구멍을,
+리뷰어가 실제로 메우고 있다. 기계 게이트로는 못 잡는 것을 모델이 잡는다.
+
+### live12 요약
+
+`adopt 4 / reject 5`. `repaired_seeds` **5**(live11 4) — Fable 검증 4항의 "유지" 조건 충족.
+`repeat_seeds` 0. **`G-GROUND` 실패 2건** — 생성기가 코퍼스 밖 문헌(`carlini2019`,
+`loshchilov2019`)을 인용하려 했다. **`scaling` 6편이 소진됐다는 직접 증거**다.
 
 ## 8. 다음 작업 (우선순위)
 
