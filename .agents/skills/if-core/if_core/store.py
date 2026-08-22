@@ -240,7 +240,8 @@ class Store:
         if not isinstance(doc, dict):
             return {"ratified": False, "codes": []}
         return {"ratified": bool(doc.get("ratified")),
-                "codes": list(doc.get("codes") or [])}
+                "codes": list(doc.get("codes") or []),
+                "legacy": list((doc.get("legacy_patterns") or {}).get("map") or [])}
 
     @staticmethod
     def pattern_code(pattern: str) -> str | None:
@@ -257,10 +258,21 @@ class Store:
         return head or None
 
     def registry_key(self, pattern: str) -> str:
-        """Code when the taxonomy is in force, otherwise the whole line."""
-        if not self.avoid_codes()["ratified"]:
-            return str(pattern or "").strip()
-        return self.pattern_code(pattern) or str(pattern or "").strip()
+        """Code when the taxonomy is in force, otherwise the whole line.
+
+        Patterns written before the taxonomy are free text and carry no code.
+        They are mapped here, when the derived view is computed, rather than
+        rewritten: `decisions.jsonl` is append-only and what a reviewer wrote
+        stays what it wrote.
+        """
+        text = str(pattern or "").strip()
+        codes = self.avoid_codes()
+        if not codes["ratified"]:
+            return text
+        for entry in codes.get("legacy", []):
+            if entry.get("prefix") and text.startswith(entry["prefix"]):
+                return entry["code"]
+        return self.pattern_code(text) or text
 
     def avoid_registry(self, domain: str) -> list[dict]:
         """Patterns that recurred, kept until they fall out of use.
@@ -290,6 +302,27 @@ class Store:
         # Oldest last-sighting drops first when over the cap.
         entries.sort(key=lambda e: order.index(e["runs"][-1]))
         return entries[-self.REGISTRY_CAP:]
+
+    def dormant_codes(self) -> set[str]:
+        """Codes that were used and then fell out of use.
+
+        Retirement is disuse, not eviction — a code stops being carried when
+        nothing has matched it for `REGISTRY_DISUSE_RUNS` closed runs. Computed
+        across domains, because the codes name structural defects in a test
+        design and nothing about them is domain-specific: every one of the eight
+        seeds describes a broken argument, not a fact about scaling laws.
+        A code that has never been used is not dormant — it has not had its turn.
+        """
+        rows = [r for r in load_jsonl(self.decisions)
+                if r.get("decision") == "reject" and r.get("reason")
+                and not r.get("informational") and (r.get("pattern") or "").strip()
+                and (r.get("reason_kind") or "question_defect") == "question_defect"]
+        order = self._run_order(rows)
+        recent = set(order[-self.REGISTRY_DISUSE_RUNS:])
+        last_seen: dict[str, str] = {}
+        for r in rows:
+            last_seen[self.registry_key(r["pattern"])] = r.get("run_id")
+        return {code for code, run in last_seen.items() if run not in recent}
 
     def write_avoid_registry(self, domain: str) -> Path:
         """Publish the derived view. Nothing reads this file — it exists so a
@@ -332,10 +365,18 @@ class Store:
             fresh = [r for r in picks if keyed(r.get("pattern") or "") not in registered]
             covered = [r for r in picks if keyed(r.get("pattern") or "") in registered]
             recent.extend((fresh + covered)[: self.RECENT_PER_RUN])
-        return {
-            "patterns": [e["pattern"] for e in self.avoid_registry(domain)],
-            "recent_reasons": [r["reason"] for r in recent],
-        }
+        codes = self.avoid_codes()
+        if codes["ratified"]:
+            # Definitions carry across domains; only the verbatim reasons are
+            # domain-scoped. A new domain therefore opens with the taxonomy
+            # already in hand rather than with an empty window — the cold start
+            # that cost `scaling` its first several runs.
+            dormant = self.dormant_codes()
+            patterns = ["%s — %s" % (c["code"], " ".join(str(c.get("def") or "").split()))
+                        for c in codes["codes"] if c["code"] not in dormant]
+        else:
+            patterns = [e["pattern"] for e in self.avoid_registry(domain)]
+        return {"patterns": patterns, "recent_reasons": [r["reason"] for r in recent]}
 
     def append_dissent(self, rec: dict) -> None:
         append_jsonl(self.dissent_log, rec)

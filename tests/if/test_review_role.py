@@ -541,3 +541,60 @@ def test_an_unratified_taxonomy_changes_nothing(tmp_path):
     line = "DUP-RESUBMIT — 무엇이든"
     assert store.registry_key(line) == line
     assert store.avoid_codes()["ratified"] is False
+
+
+def test_patterns_written_before_the_taxonomy_are_mapped_not_rewritten(tmp_path):
+    """decisions.jsonl is append-only, so what a reviewer wrote stays what it
+    wrote. The migration is a re-key of the derived view: two free-text lines
+    naming the same defect collapse onto one code and meet the two-run
+    condition, which is how the empty registry gets its first entry without
+    waiting for new observations."""
+    store = Store(tmp_path)
+    _reject(store, "RUN-A", "Q-A", "사유 A", "이미 채택된 문항의 부분 분석을 재포장했다")
+    _reject(store, "RUN-B", "Q-B", "사유 B", "직전 런에서 채택 권고된 문항과 동일 구조다")
+    raw = [l for l in (tmp_path / "memory" / "decisions.jsonl").read_text(
+        encoding="utf-8").splitlines() if l.strip()]
+
+    (tmp_path / "memory" / "avoid_codes.yaml").write_text(yaml.safe_dump({
+        "schema_version": "if.avoid-codes.v1", "ratified": True,
+        "codes": [{"code": "DUP-RESUBMIT", "def": "재제출"}],
+        "legacy_patterns": {"map": [
+            {"prefix": "이미 채택된 문항의 부분 분석을", "code": "DUP-RESUBMIT"},
+            {"prefix": "직전 런에서 채택 권고된 문항과 동일 구조", "code": "DUP-RESUBMIT"},
+        ]},
+    }, allow_unicode=True), encoding="utf-8")
+
+    assert [e["pattern"] for e in store.avoid_registry("scaling")] == ["DUP-RESUBMIT"]
+    after = [l for l in (tmp_path / "memory" / "decisions.jsonl").read_text(
+        encoding="utf-8").splitlines() if l.strip()]
+    assert after == raw, "the log must not be rewritten by a re-key"
+
+
+def test_a_new_domain_opens_with_the_taxonomy_already_in_hand(tmp_path):
+    """Codes name structural defects in an argument, not facts about a subject,
+    so they carry across domains. `scaling` paid for its cold start over
+    several runs; the next domain should not pay it again."""
+    store = Store(tmp_path)
+    _write_codes(tmp_path, ratified=True,
+                 codes=("DUP-RESUBMIT", "PREDETERMINED", "NAME-ONLY-VARIABLE"))
+    _reject(store, "RUN-A", "Q-A", "사유", "DUP-RESUBMIT — 재제출")
+
+    fresh = store.query_avoid_patterns("a-domain-with-no-history")
+    assert len(fresh["patterns"]) == 3, "every ratified code travels"
+    assert fresh["recent_reasons"] == [], "verbatim reasons stay domain-scoped"
+    assert any(p.startswith("NAME-ONLY-VARIABLE —") for p in fresh["patterns"])
+
+
+def test_a_code_that_falls_out_of_use_stops_being_carried(tmp_path):
+    """Retirement is disuse, not eviction — otherwise the list only grows. A
+    code that has never been used is not dormant; it has not had its turn."""
+    store = Store(tmp_path)
+    _write_codes(tmp_path, ratified=True, codes=("DUP-RESUBMIT", "PREDETERMINED"))
+    _reject(store, "RUN-1", "Q-1", "사유", "DUP-RESUBMIT — 재제출")
+    assert store.dormant_codes() == set()
+
+    for run in ("RUN-2", "RUN-3", "RUN-4", "RUN-5"):
+        _reject(store, run, "Q-%s" % run, "사유", "PREDETERMINED — 사전 결정")
+    assert "DUP-RESUBMIT" in store.dormant_codes()
+    carried = [p.split(" —")[0] for p in store.query_avoid_patterns("scaling")["patterns"]]
+    assert carried == ["PREDETERMINED"]
