@@ -206,6 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260822-live13` | **종결** (2026-08-22). **`domain: preference` 첫 런.** `adopt 7 / reject 1 / defer 1`. 코퍼스 11편 중 10편 실사용, **힌트 밖 인용 0**. taxonomy 발효 후 첫 런이나 `question_defect` 거부가 없어 이월 코드는 미시험(§7.20) |
 | `RUN-20260822-live12` | **종결** (2026-08-22). `adopt 4 / reject 5`. `repaired_seeds` 5 / `repeat_seeds` 0. **G-GROUND 실패 2건 — 코퍼스 밖 인용 시도**(소진 신호). pattern 5건이 쌓였으나 어휘 불일치로 **등록부 등재 0**(§7.18) |
 | `RUN-20260822-live11` | **종결** (2026-08-22). `adopt 6 / reject 2 / defer 1`. `repaired_seeds` 4 / `repeat_seeds` 0 / 새 영역 5. **`pattern` 과 쓰기 린트가 처음 발동**했고 거부 2건 모두 수치 없는 구조 서술로 왔다. 등록부는 2런 등재 조건이라 아직 비어 있다(§7.17) |
 | `RUN-20260822-live10g` | **종결** (2026-08-22, `adopt 9 / reject 0`, §7.16). 완주, `human=awaiting_human` (2026-08-22). live8 과 배정이 동일하도록 `brief_id` 를 골라 세운 통제 비교. seed 9 / qo 9 / scored 9, 9/9 succeeded, 손실 0. **예산 조항을 빼도 `OP-SCALE` 규모가 돌아오지 않았다** — 오염원이 브리프에서 회피 창으로 이동했다(§7.14) |
@@ -1130,6 +1131,50 @@ live12 거부 사유 하나에 *"인용 주장에 **원 논문에 없는 내용�
 시드 8개의 입도(`NONDISCRIMINATING`/`PREDETERMINED` 경계 사례가 이미 보인다) ·
 **다른 런타임이 리뷰어가 되면 같은 코드를 같은 뜻으로 쓸지 미검증** ·
 한정어가 수리 신호를 얼마나 나르는지.
+
+## 7.20 도메인 전환 — `preference` 개시 (2026-08-22, live13)
+
+§7.19 taxonomy 를 발효시키고 새 도메인으로 옮겼다. `adopt 7 / reject 1 / defer 1`.
+
+### 코퍼스가 실재한다
+
+**힌트 밖 인용 0건**, 11편 중 10편 실사용(`ethayarajh2024` 만 미사용).
+`scaling` 12회차가 코퍼스 밖 인용 2건으로 탈락했던 것과 대조된다 — 새 도메인은
+지평선 안에 물을 것이 남아 있다.
+
+```
+rafailov2023 7 | azar2023 4 | gao2023 3 | park2024 2 | christiano2017 2
+ouyang2022 2 | casper2023 1 | stiennon2020 1 | bai2022hh 1 | ziegler2019 1
+```
+
+**식별자 통일이 7건을 살렸다.** 두 제안이 DPO 를 `rafailov2023`/`rafailov2024` 로 달리
+불렀고, `source_in_hints` 는 연도가 다르면 탈락시킨다(접미사만 다르면 통과 — 비대칭이다).
+`rafailov2024` 로 뒀으면 최다 인용 7건이 전부 `G-GROUND` 탈락이었다.
+**코퍼스 식별자는 연도를 확인해서 정할 것.**
+
+### 이월 코드는 아직 시험되지 않았다
+
+`question_defect` **거부가 0건**이라 코드가 한 번도 부여되지 않았다.
+Fable 의 검증 5항(*"도메인 전환 후 첫 런의 거부에서 이월 코드가 실제로 쓰이는 건수"*)은
+**여전히 미측정**이다. 거부 1건은 판정자가 낸 `GATE_FAIL` 로 기계 경로 자동 처리되어
+`informational` 이고 pattern 을 갖지 않는다.
+
+### 관측 — `defer` 사유는 생성기에 도달하지 않는다
+
+Q-0034 는 `defer` + `reason_kind: question_defect` 다. Fable 이 기본값(`our_capacity`)을
+덮어썼고, 그 판단은 옳다 — 유보 이유가 우리 자원이 아니라 **설계 결함**이다.
+
+그런데 그 사유는 **순수한 수리 지침**이다(*"두 결함으로 재정식화가 필요하다 — 첫째… 둘째…"*).
+`query_avoid_patterns` 는 `reject` 만 읽으므로 **이 지침은 다음 런에 전달되지 않는다.**
+§7.14 에서 관측한 수리 고리의 연료가 `defer` 에서는 버려진다.
+
+설계상 일관적이다(`defer` 는 "피하라" 가 아니다). 그러나 **수리를 성공 모드로 보는 §7.15 의
+관점과는 긴장이 있다.** 고치지 않고 기록만 한다 — 판단이 필요하면 Fable 에게 물을 일이다.
+
+### 그 외
+
+`repaired_seeds` **0** — 도메인이 바뀌었으므로 정상이며, 지표가 도메인 경계를 넘어
+잘못 매칭하지 않음이 확인됐다. `repeat_seeds` 0, `dropped_seeds` 0, `unjudged` 0.
 
 ## 8. 다음 작업 (우선순위)
 
