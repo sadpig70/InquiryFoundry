@@ -228,6 +228,40 @@ class Store:
                 order.append(rid)
         return order
 
+    def avoid_codes(self) -> dict:
+        """The taxonomy, and whether it is in force.
+
+        A machine reviewer proposed these codes from its own verdict history.
+        It does not enact them: the taxonomy is the coordinate system every
+        later rejection is expressed in, and a reviewer enacting its own would
+        institutionalise its bias. Until a person ratifies, nothing keys on it.
+        """
+        doc = load_yaml(self.root / "memory" / "avoid_codes.yaml")
+        if not isinstance(doc, dict):
+            return {"ratified": False, "codes": []}
+        return {"ratified": bool(doc.get("ratified")),
+                "codes": list(doc.get("codes") or [])}
+
+    @staticmethod
+    def pattern_code(pattern: str) -> str | None:
+        """`CODE — qualifier` -> CODE. The key is the code alone.
+
+        Free text failed as a key because the same reviewer wrote the same
+        defect two different ways across live11 and live12, so the registry
+        never entered anything. The fix is not stricter discipline but a closed
+        list to choose from — the qualifier stays free so the specificity that
+        drives repairs survives.
+        """
+        head = str(pattern or "").split("—", 1)[0].strip()
+        head = head.split(" - ", 1)[0].strip()
+        return head or None
+
+    def registry_key(self, pattern: str) -> str:
+        """Code when the taxonomy is in force, otherwise the whole line."""
+        if not self.avoid_codes()["ratified"]:
+            return str(pattern or "").strip()
+        return self.pattern_code(pattern) or str(pattern or "").strip()
+
     def avoid_registry(self, domain: str) -> list[dict]:
         """Patterns that recurred, kept until they fall out of use.
 
@@ -244,7 +278,7 @@ class Store:
         recent_runs = set(order[-self.REGISTRY_DISUSE_RUNS:])
         seen: dict[str, dict] = {}
         for r in rows:
-            key = r["pattern"].strip()
+            key = self.registry_key(r["pattern"])
             entry = seen.setdefault(key, {"pattern": key, "runs": []})
             if r.get("run_id") and r["run_id"] not in entry["runs"]:
                 entry["runs"].append(r["run_id"])
@@ -289,13 +323,14 @@ class Store:
         rows = self._defect_rows(domain)
         order = self._run_order(rows)
         registered = {e["pattern"] for e in self.avoid_registry(domain)}
+        keyed = self.registry_key
         recent, by_run = [], {}
         for r in rows:
             by_run.setdefault(r.get("run_id"), []).append(r)
         for run_id in order[-self.RECENT_RUNS:]:
             picks = by_run.get(run_id) or []
-            fresh = [r for r in picks if (r.get("pattern") or "").strip() not in registered]
-            covered = [r for r in picks if (r.get("pattern") or "").strip() in registered]
+            fresh = [r for r in picks if keyed(r.get("pattern") or "") not in registered]
+            covered = [r for r in picks if keyed(r.get("pattern") or "") in registered]
             recent.extend((fresh + covered)[: self.RECENT_PER_RUN])
         return {
             "patterns": [e["pattern"] for e in self.avoid_registry(domain)],

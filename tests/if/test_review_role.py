@@ -484,3 +484,60 @@ def test_a_question_defect_reject_must_carry_a_pattern(tmp_path):
         "question_id": "Q-1", "decision": "reject",
         "reason": "우리에게 다중 노드 클러스터 접근권이 없다", "reason_kind": "our_capacity"}]},
         allow_stub=False)
+
+
+def _write_codes(tmp_path, ratified, codes=("DUP-RESUBMIT", "PREDETERMINED")):
+    (tmp_path / "memory").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "memory" / "avoid_codes.yaml").write_text(
+        yaml.safe_dump({
+            "schema_version": "if.avoid-codes.v1",
+            "ratified": ratified,
+            "codes": [{"code": c, "def": "정의 %s" % c} for c in codes],
+        }, allow_unicode=True),
+        encoding="utf-8")
+
+
+def _reject(store, run_id, qid, reason, pattern):
+    store.record_decision({
+        "question_id": qid, "decision": "reject", "domain": "scaling",
+        "reason": reason, "run_id": run_id, "informational": False,
+        "reason_kind": "question_defect", "pattern": pattern,
+    })
+
+
+def test_codes_key_the_registry_once_a_person_ratifies(tmp_path):
+    """The same reviewer wrote the same defect two different ways across live11
+    and live12, so a string key entered nothing and the two-run condition could
+    never be met. Keying on a code from a closed list fixes it — but only after
+    a person ratifies, because a reviewer must not enact the coordinate system
+    its own later verdicts are expressed in."""
+    store = Store(tmp_path)
+    _reject(store, "RUN-A", "Q-A", "이미 채택된 문항을 다시 냈다",
+            "DUP-RESUBMIT — 부분 분석을 독립 문항으로 재포장")
+    _reject(store, "RUN-B", "Q-B", "직전 런 문항과 같은 구조다",
+            "DUP-RESUBMIT — 동일 구조 설계의 재제출")
+
+    _write_codes(tmp_path, ratified=False)
+    assert store.avoid_registry("scaling") == [], "unratified: the old string key stands"
+
+    _write_codes(tmp_path, ratified=True)
+    assert [e["pattern"] for e in store.avoid_registry("scaling")] == ["DUP-RESUBMIT"]
+
+
+def test_the_qualifier_never_reaches_the_key(tmp_path):
+    """Free text stays, so the specificity that drives repairs survives; it just
+    does not decide entry."""
+    store = Store(tmp_path)
+    _write_codes(tmp_path, ratified=True)
+    assert store.pattern_code("PREDETERMINED — 상수 재척도로 결과가 정해짐") == "PREDETERMINED"
+    assert store.pattern_code("PREDETERMINED - 하이픈 구분자도 받는다") == "PREDETERMINED"
+    assert store.registry_key("PREDETERMINED — 무엇이든") == "PREDETERMINED"
+
+
+def test_an_unratified_taxonomy_changes_nothing(tmp_path):
+    """The gate has to be real: shipping the mechanism must not switch it on."""
+    store = Store(tmp_path)
+    _write_codes(tmp_path, ratified=False)
+    line = "DUP-RESUBMIT — 무엇이든"
+    assert store.registry_key(line) == line
+    assert store.avoid_codes()["ratified"] is False
