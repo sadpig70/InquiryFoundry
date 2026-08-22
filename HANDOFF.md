@@ -206,6 +206,7 @@ oa.py recover --expire-controls    --lwar-id LWARn --instance-id … --generatio
 | `RUN-20260814-live1` | **동결**. judge 연결 금지. dead-letter 1건(`…contrarian-LWAR3-r0`)은 requeue 금지 |
 | `RUN-20260815-live2` | generate/contrarian/judge 3/3, compose 완료. `protocol_valid=true`, SCORED 8, REJECTED 1. human=`awaiting_human`. **ADOPTED는 인간만** |
 | `RUN-20260818-live3c` | **종결** (2026-08-19). `--pao` 정규 경로 최초 완주(8분) + **`close` 최초 실행**. seed 9 / qo 9 / scored 9, `protocol_valid`·`hypothesis_valid`·`dissent_referenced` 모두 true, `contributing_generate_lwars=3`. human=`closed`, `decided: {adopt 4, reject 5, defer 0}`. reviewer `Jung Wook Yang`. **이 저장소에서 EXPLORE→EXPLOIT→REVIEW→CLOSE 전 구간을 완주한 첫 런** |
+| `RUN-20260822-live10g` | **완주**, `human=awaiting_human` (2026-08-22). live8 과 배정이 동일하도록 `brief_id` 를 골라 세운 통제 비교. seed 9 / qo 9 / scored 9, 9/9 succeeded, 손실 0. **예산 조항을 빼도 `OP-SCALE` 규모가 돌아오지 않았다** — 오염원이 브리프에서 회피 창으로 이동했다(§7.14) |
 | `RUN-20260821-live9` | **완주**, `human=awaiting_human` (2026-08-21). 예산 조항을 뺀 `constraints` 로 돌린 첫 런. seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds`·`unjudged`·`repeat_seeds` 모두 0. **`OP-2ND`/`OP-REGIME`/`OP-ADV` 첫 등장**(연산자 회전). 핵심 지표 `OP-SCALE` 은 회전 때문에 배정되지 않아 측정 실패(§7.12). 자료 `_workspace/if-live9/review-brief.md` |
 | `RUN-20260821-live8` | **완주**, `human=awaiting_human` (2026-08-21). 로스터 codex/openai · antigravity/google · **grok/xai**(신규). seed 9 / qo 9 / scored 9, 9/9 succeeded, `dropped_seeds` 0, `unjudged` 0 — 손실 없는 첫 런. 제약 효과 재현(자원 초과 0건, 등가 마진 9/9). **LWAR2 가 live7b 문항 3건을 유사도 1.00 으로 재생성** — `--pao` 경로에 중복 억제가 없다(§7.10). 자료 `_workspace/if-live8/review-brief.md` |
 | `RUN-20260820-live7b` | **완주(손상)**, `human=awaiting_human` (2026-08-20). 브리프 `constraints` 3건을 처음 투입한 런. seed 9 / qo 9 / **scored 5**, `protocol_valid` true 이나 `slo_scored_ge_8` false — GLM 크레딧 소진으로 judge 1건 타임아웃. 제약 효과: 자원 초과 설계 9/9 해소, 기각 조건 9/9 등가 마진(§7.10). 판정 못 받은 4건은 `DORMANT` 로 복구(§7.9). 검토 대상 **5문항**, 자료 `_workspace/if-live7/review-brief.md` |
@@ -852,6 +853,59 @@ live5b·live6 의 낡은 신호가 빠졌고, 예산 사유(§7.12 의 혼재 1�
 따라서 **`ADOPTED` 는 "추구할 가치가 있다" 이지 "지금 실행한다" 가 아니다.**
 지금 못 할 것을 `DEFERRED` 로 내리는 판단은 운영자에게 남아 있으며, 하지 않아도 무해하다 —
 채택 목록에 당장 못 하는 질문이 섞일 뿐, 질문의 가치 판정은 오염되지 않는다.
+
+## 7.14 회피 창이 브리프를 대신해 오염을 나른다 (2026-08-22, live10g)
+
+§7.12 의 측정을 다시 세웠다. 연산자 회전이 `brief_id` 의 결정적 해시라는 점을 역이용해,
+**live8 과 배정이 완전히 같아지는 `brief_id`(`RUN-20260822-live10g`)** 를 골랐다 —
+LWAR2(google) 가 `[OP-SCALE, OP-XDOM, OP-MISSVAR]` 를 받는다.
+`domain`·`goal`·`evidence_hints`·`budget`·`mode` 는 live8 과 동일하고,
+**다른 것은 `constraints` 내용뿐인 통제된 비교**다.
+
+### 결과 — 가설 반증
+
+| 런 | `constraints` | OP-SCALE 질문 |
+|---|---|---|
+| live6 | 없음 | **>10^25 FLOPs**, Post-Chinchilla 불안정성 |
+| live8 | 예산 조항 | 소형 재현 가능 **10^18~10^20**, Huber vs MSE 민감도 |
+| live10g | 예산 조항 **제거** | 소형 재현 가능 **10^18~10^20**, Huber 피팅 b 의 SE 단조 증가 |
+
+**예산 조항을 빼도 규모가 돌아오지 않았다.** §7.12 의 진단(브리프 `constraints` 가 축소를
+일으켰다)은 이 런에서 지지되지 않는다.
+
+### 오염원이 이동했다
+
+`constraints` 에는 규모 어휘가 없다(`재현 가능` 없음, `소형` 없음, `10^1` 없음).
+**`avoid_patterns` 에 있다**(`재현 가능`·`1e1`·`FLOPs` 모두 있음). 두 사유가 나른다:
+
+- *"질문이 스스로 답을 결정해 두었다 — **공개 실험 규모(C 1e18~1e21)** 에서…"*
+  거부 사유가 **부수적으로 언급한 규모 범위**를 생성기가 작업 범위로 흡수한다.
+- **`reason_kind` 로는 막을 수 없다.** 그 사유는 정당한 `question_defect` 이고
+  규모는 곁다리로 나온 것이다. (A)/(B) 축은 사유의 **판정 근거**를 가르지
+  **사유가 흘리는 부수 정보**를 가르지 못한다.
+
+**즉 브리프를 정리해도 되먹임 고리가 같은 압력을 계속 전달한다.** §7.12 는 통로 하나를
+막았을 뿐이고, 회피 창 자체가 남은 통로다.
+
+### 부수 발견 — 회피 패턴은 억제만 하지 않고 **수리시킨다**
+
+회피 창의 한 사유는 live7b Q-0019(거부된 `OP-SCALE`)의 것이다:
+*"판정 구조가 자기모순이다 — 스케일 구간이 증가할 때 신뢰구간 확장을 묻는데
+criterion 은 더 작은 서브그리드의 50% 확장을 성공으로 정의해 방향이…"*
+
+live10g 의 `OP-SCALE` 질문은 **동일 표본 크기(N=50) 서브그리드**로 방향 모순을 없애고
+**등가 마진(SE 차이 > 0.03)** 을 붙였다. **지적된 결함이 정확히 수리돼 돌아왔다.**
+자카드 0.18 — 반복이 아니라 다른 질문이다.
+
+지금까지 회피 패턴을 "피하라" 신호로만 봤는데, 실제로는 **"이렇게 고쳐서 다시 물어라"**
+로도 작동한다. 좋고 나쁨을 단정하기 이르다 — 함정은 제거되지만 질문이 같은 이웃에 머문다.
+
+### 방법론 교훈
+
+**또 변수를 하나만 바꿨다고 생각했고 또 틀렸다.** live7b~live9 세 런을 닫으면서
+**회피 창 8건이 통째로 교체된 것**을 계산에 넣지 않았다. 브리프를 고정해도
+창이 바뀌면 생성기 입력은 바뀐다. 다음 비교 실험은 **창까지 고정**하거나,
+최소한 창의 변화량을 함께 기록해야 한다.
 
 ## 8. 다음 작업 (우선순위)
 
