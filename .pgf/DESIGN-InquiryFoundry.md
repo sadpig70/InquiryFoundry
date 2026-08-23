@@ -1,6 +1,7 @@
-# InquiryFoundry Design @v:0.2.3
+# InquiryFoundry Design @v:0.2.4
 
 **Status** designing · **Notation** PG v1.4 + PGF v2.6 · **Scale** Level 3 (22 nodes)
+**v0.2.4** 되먹임 하위계를 코드에 맞춰 정정 (D22–D26, Feedback contract, Invariants 9–12)
 **Runtime** Claude Code CLI OA + 이종 CLI LWAR (PAO file bus)
 **Draft sources (non-normative)** `_legacy/InquiryFoundry_DESIGN.md`, `_legacy/*` — **로컬 전용이며 저장소에 없다.** 이 문서가 권위이고 초안은 참고 이력이다.
 **Review** `.pgf/REVIEW-InquiryFoundry.md` (design-review cycle 3 applied)
@@ -50,6 +51,11 @@ protocol_valid = computed from observations (see IfCycle). never a constant.
 | D19 | 기계 kill 1건 = `KILLED` (`kills >= 1`). AI는 kill을 부여하지 않는다. |
 | D20 | `th_pair`는 **런 내부 쌍**에만. prior(도메인 일치 + 최근 50 SCORED/ADOPTED)는 **mean만**. `th_mean` 기본 0.40, `th_pair` 기본 0.55 (`th_mean < th_pair`). |
 | D21 | 기계 `REJECTED` 카드는 informational. 인간 adopt 불가. reason은 `record_decision`만. `LEGAL[REJECTED]`는 DORMANT만. |
+| D22 | **회피 정보는 전 LWAR 동일 배열이다.** 슬라이싱 금지. 이종성은 operators·evidence_kind·objective 가 만든다. 기각된 함정은 다양성 손잡이가 아니다. live4b 에서 패턴을 받은 LWAR 은 전부 그 함정을 피했고 못 받은 LWAR 이 둘 다 재현했다. **이 결정은 v0.2.3 의 `avoid_all[i::len(lwars)]` 를 뒤집는다.** |
+| D23 | 회피는 **두 블록**이다. `avoid_registry` = 택소노미 코드(런을 건너 지속, 도메인을 건너 운반). `avoid_patterns` = 축어 최근 창(최근 3 닫힌 런 × ≤3, 도메인 한정). 하나의 모양으로 두 일을 못 한다 — 코드는 재발을 막고, 축어는 **수리**를 유도한다(live10g). |
+| D24 | 택소노미 효과 측정용 통제는 **`brief.withhold_avoid_codes`** 다. `avoid_codes.ratified` 를 내리는 것으로 대신하지 않는다 — 그 플래그는 리뷰어의 `known_patterns` 와 `require_known_code` 까지 끄므로 통제군 기각이 자유서술로 남아 결함 종류 비교가 불가능해지고, `ratified` 복귀 후 그 자유서술이 append-only 로그에서 첫 절로 키된다. `avoid_codes_withheld` 는 **false 여도 기록**한다 — 빈 배급은 "감췄다" 와 "보낼 게 없었다" 가 구별되지 않는다. |
+| D25 | `brief.constraints` 는 전 생성기에게 전달되는 **상시 규칙**이다. 스키마에 있으면서 아무도 읽지 않던 필드였다. **여기에 예산·규모 제한을 넣지 않는다** — 넣으면 질문이 우리 지갑에 맞춰 축소된다. IF 는 자기 예산을 모른다. |
+| D26 | **파생 뷰는 권위가 아니다.** `.if/memory/avoid_registry.yaml` 은 사람이 보라고 발행하며 아무 코드도 읽지 않는다. 상태를 물을 때는 `store.avoid_registry(domain)` 을 호출한다. 이 파일을 읽고 판단해서 한 번 틀린 결론을 냈다. |
 
 ---
 
@@ -63,8 +69,89 @@ protocol_valid = computed from observations (see IfCycle). never a constant.
 6. **Human Gate** — 기계는 `ADOPTED`를 쓰지 않는다. `actor=human`은 reviewer 비공란에서만.
 7. **Provenance** — lineage 필수 공란이면 StoreIo 거절. 그래프 쓰기와 `question_id` mint는 StoreIo 단일 진입(IfCycle/OA 프로세스).
 8. **Overlay, not Fork** — `if-oa`/`if-lwar`는 PAO CLI 호출. `pao_runtime` 복사 금지.
+9. **Feedback Reaches Everyone** — 회피 정보(`avoid_patterns`, `avoid_registry`)와
+   `constraints` 는 전 생성기 슬롯에 **동일 배열**로 간다. 슬라이싱은 결함이다(D22).
+10. **Machine Cannot Close** — `apply_recommendation` 은 `reviewer` 를 비워 두고
+    `preflight_close` 가 빈 `reviewer` 를 거절한다. 기계는 자기 권고로 런을 닫지
+    못한다. 이 보장은 리뷰어의 정직성이 아니라 코드에 있다.
+11. **Append-Only Verdicts** — `decisions.jsonl` 은 추가 전용. 리뷰어가 쓴 문장을
+    나중에 고쳐 쓰지 않는다. 코드 부여 같은 재해석은 **유도 시점**에 한다(`registry_key`).
+12. **Derived Is Not Authoritative** — 발행된 파생 뷰를 읽고 상태를 판단하지 않는다.
+    질의는 store 함수로 한다(D26).
 
 ---
+
+## Feedback contract
+
+되먹임 하위계는 v0.2.3 이후 전부 코드에만 있었다. 그래서 필드 이름으로 동작을
+추론하다 세 번 틀렸다 — 아래는 추론이 아니라 실물 저장소로 확인한 계약이다.
+
+### 코드 위치
+
+| 무엇 | 어디 |
+|---|---|
+| `query_avoid_patterns` · `avoid_registry` · `registry_key` · `avoid_codes` | `if_core/store.py` |
+| `build_allocation` · `run_operator_offset` | `if_core/allocate.py` |
+| `review_packet` · `apply_recommendation` · `require_known_code` · `ratify` · **`preflight_close`** | `if_core/review.py` |
+| 브리프 필드 선언 (`additionalProperties: False`) | `if_core/schema.py` |
+| 재발·배급 시점 측정 | `tools/if_recurrence.py` |
+
+`preflight_close` 는 이름과 달리 `cycle.py` 가 아니라 `review.py` 에 있다.
+
+### 누가 무엇을 받는가
+
+| 필드 | 출처 | 도달 | 비고 |
+|---|---|---|---|
+| `avoid_registry` | `query_avoid_patterns(domain)["patterns"]` | **생성기** | 택소노미 코드. `withhold_avoid_codes` 로 차단 가능 |
+| `avoid_patterns` | 같은 함수의 `["recent_reasons"]` | **생성기** | 축어 사유. 차단 스위치 없음 |
+| `constraints` | `brief.constraints` | **생성기 + 리뷰어** | 리뷰어에는 `review_packet` 이 실어 나른다 |
+| `known_patterns` | 같은 `["patterns"]` | **리뷰어** | 생성기와 **같은 원천, 다른 경로**. 브리프 스위치의 영향을 받지 않는다 |
+| `hint_strings` · `must_consider` · `operators` · `evidence_kind` · `objective` | 브리프/배분 | 생성기 | 이종성 손잡이 |
+
+> **`avoid_registry` 와 `avoid_patterns` 는 이름이 뜻을 배신한다.** 지속 블록이
+> `avoid_registry`, 최근 창이 `avoid_patterns` 다. live13 에서 의미가 뒤바뀌었고,
+> 이름만 보고 읽으면 전환 양쪽의 **모든 런을 잘못 라벨한다.**
+
+### `decisions.jsonl` — 어느 필드가 루프를 먹이는가
+
+append-only 다. 리뷰어가 쓴 것은 쓴 그대로 남는다.
+
+| 필드 | 되먹임 진입 | 규칙 |
+|---|---|---|
+| `reason` | ○ | 축어 창의 내용물 |
+| `pattern` | ○ | `CODE — qualifier`. 레지스트리는 **CODE 만** 키로 쓴다 |
+| `reason_kind` | `question_defect` 만 | `our_capacity` = 우리 사정. 질문의 결함이 아니므로 다음 런에 싣지 않는다 |
+| `informational: true` | **×** | 기계 게이트 탈락. 리뷰어 판정이 아니므로 루프에 넣지 않는다 |
+| `decision: defer` | × | `DEFERRED` 는 질문이 아니라 자원의 문제 |
+
+**결과적으로 리뷰 기각 건수와 되먹임 진입 건수는 다르다.** live13 은 기각 1건이
+전부 `informational` 이어서 되먹임에 아무것도 보태지 않았다. 기각률을 되먹임의
+대리 지표로 쓰지 말 것.
+
+### 레지스트리 — 유도되며, 발행본은 권위가 아니다
+
+`decisions.jsonl` 에서 매번 다시 계산한다(두 번째 진실 원천을 만들지 않는다).
+진입은 **2런 재발**, 퇴장은 **4런 미사용**, 상한 12. 대량 기각이 이것을 밀어내지 못한다.
+
+`registry_key` 가 `avoid_codes.ratified` 에 따라 달라진다 — 비준 전에는 자유서술
+전체가 키이고, 비준 후에는 legacy prefix 표를 거쳐 CODE 로 접힌다. **같은 로그가
+플래그에 따라 다른 레지스트리를 낸다.** `.if/memory/avoid_registry.yaml` 은 사람이
+보라고 쓰는 스냅샷이고 자동 갱신되지 않는다(D26).
+
+### 배급 시점 — 닫히기 전에 배급하면 빈 창이 간다
+
+되먹임은 **런 종료 시점에** 생긴다. 직전 런이 닫히기 전에 배분표를 쓰면 생성기는
+빈 창을 받고, 기록은 먹은 런과 구별되지 않는다. 실측된 유일한 verbatim 재발 3건이
+전부 이 겹침이다(live8 은 live7b 가 닫히기 5.3시간 전에 배급됐다).
+`tools/if_recurrence.py` 가 사후에 `BLIND` 로 표시한다.
+
+### 리뷰 역할
+
+`review_packet` 은 **출처가 없다** — 벤더·연산자·기계 점수·선행 판정 모두 제외한다.
+`apply_recommendation` 은 `reviewer` 를 **비워 둔 채** 기록하고, `preflight_close` 가
+빈 `reviewer` 를 거절한다. 즉 **기계가 자기 판정으로 런을 닫지 못하는 것은 관례가
+아니라 코드**다. 종결은 `ratify` 이고 `reviewer_kind` 에
+`human` / `machine_recommended` / `human_ratified` / `delegated` 가 남는다.
 
 ## Gantree
 
@@ -862,35 +949,55 @@ def vendor_family(lwar: dict) -> str:
         raise Blocked(f"{lwar.get('lwar_id')} missing vendor_family")
     return FAMILY_NORM.get(raw.lower(), raw.lower())
 
-def build_allocation(brief: dict, lwars: list) -> dict:
+def run_operator_offset(brief: dict) -> int:
+    # 슬롯 i 가 항상 operators i*k..i*k+k-1 을 받으면, 같은 로스터 순서가 매 런
+    # 같은 벤더에게 같은 연산자를 준다. live8 이 live7b 의 브리프를 반복했을 때
+    # 한 런타임이 Jaccard 1.00 인 질문 3건을 돌려줬다 — 바이트 동일 입력을 받은
+    # 결정론 생성기이지 생성기의 결함이 아니다. 전 슬롯이 같은 양만큼 이동하므로
+    # 삼중항은 서로소로 남고 이종성 키가 유지된다. brief_id 의 SHA-256 에서
+    # 유도한다(프로세스마다 소금이 붙는 hash() 가 아니다) — 런이 재현 가능해야 한다.
+    brief_id = str(brief.get("brief_id") or "")
+    if not brief_id:
+        return 0
+    return int.from_bytes(hashlib.sha256(brief_id.encode()).digest()[:4], "big") % len(OPERATORS)
+
+def build_allocation(brief: dict, lwars: list, avoid=None) -> dict:
+    # avoid = {patterns, recent_reasons}. 맨 리스트는 recent_reasons 로 읽는다.
     families = {vendor_family(x) for x in lwars}
     if brief.get("mode", "normal") == "normal" and len(families) < 2:
         raise Blocked("need >= 2 vendor_family for normal mode")
     kinds = list(brief.get("evidence_hints") or {}) or list(EvidenceKind.__args__)
     objs = ["importance_max", "consensus_falsify", "info_per_cost"]
-    avoid_all = query_avoid_patterns(brief["domain"])
+    patterns = list((avoid or {}).get("patterns") or [])
+    reasons  = list((avoid or {}).get("recent_reasons") or [])
+    withheld = bool(brief.get("withhold_avoid_codes"))   # 생성기 전용 차단 (D24)
+    if withheld:
+        patterns = []
+    offset = run_operator_offset(brief)
     table, used = {}, set()
     for i, lwar in enumerate(lwars):
         fam = vendor_family(lwar)
         ev = kinds[i % len(kinds)]
-        ops = default_ops_for(i, 3)
+        ops = default_ops_for(i, 3, offset)
         key = (fam, frozenset(ops), ev)
         if key in used:
             ops = leftover_ops(used, fam, ev, ops)
             if ops is None:
                 ev = kinds[(i + 1) % len(kinds)]
-                ops = leftover_ops(used, fam, ev, default_ops_for(i + 7, 3))
+                ops = leftover_ops(used, fam, ev, default_ops_for(i + 7, 3, offset))
             if ops is None:
                 raise Blocked("cannot satisfy heterogeneity key")
             key = (fam, frozenset(ops), ev)
         used.add(key)
-        slice_avoid = avoid_all[i::len(lwars)]     # 동일 목록 공유 금지
         table[lwar["lwar_id"]] = {
             "vendor_family": fam,
             "operators": ops,
             "evidence_kind": ev,
             "objective": objs[i % 3],
-            "avoid_patterns": slice_avoid,
+            "avoid_patterns": list(reasons),        # 축어 최근 창 — 전원 동일 (D22)
+            "avoid_registry": list(patterns),       # 택소노미 코드 — 전원 동일 (D23)
+            "avoid_codes_withheld": withheld,       # false 여도 기록한다 (D24)
+            "constraints": list(brief.get("constraints") or []),   # 상시 규칙 (D25)
             "hint_strings": (brief.get("evidence_hints") or {}).get(ev, []),
             "max_seeds": brief["budget"]["max_seeds_per_lwar"],
             "must_consider": (brief.get("must_consider_slices") or {}).get(lwar["lwar_id"], []),
@@ -899,7 +1006,9 @@ def build_allocation(brief: dict, lwars: list) -> dict:
     # acceptance_criteria:
     #   - 동일 vendor_family 에 동일 (ops-set, evidence_kind) 0
     #   - 기본 경로에 AI_select_operators 없음
-    #   - avoid_patterns 전 LWAR 동일 배열 금지
+    #   - avoid_patterns / avoid_registry / constraints 는 **전 LWAR 동일 배열** (D22)
+    #   - 슬롯마다 서로 다른 list 객체일 것 (한 슬롯의 변형이 다른 슬롯에 새지 않게)
+    #   - avoid_codes_withheld 는 모든 런에 기록된다 (D24)
 ```
 
 ### ExploreLoop

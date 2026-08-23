@@ -11,7 +11,7 @@ value ≈ expected_knowledge_change × importance × answerability
 output = Pareto portfolio of Question Objects
 ```
 
-현재 상태: **v0.2.3 execute**. `if-core` + 역할 스킬 + 로컬 pytest. 라이브 인지 런 `RUN-20260815-live2`는 compose까지 수행, human adopt 대기. Phase2 (`IfPhase2Roles`) blocked.
+현재 상태: **v0.2.4 execute**. `if-core` + 역할 스킬 + 로컬 pytest(89). 라이브 런 13회 종료, 질문 117건 산출 · 채택 64 · 기각 47 · 유보 5. 도메인 `scaling`(10런, 코퍼스 소진) → `preference`(3런). 생성 3대(서로 다른 벤더) + 리뷰어 1대 구성. Phase2 (`IfPhase2Roles`) blocked.
 
 ---
 
@@ -19,7 +19,7 @@ output = Pareto portfolio of Question Objects
 
 | 문서 | 역할 |
 |---|---|
-| [`.pgf/DESIGN-InquiryFoundry.md`](.pgf/DESIGN-InquiryFoundry.md) | **권위 설계** v0.2.3 (PG + PGF) |
+| [`.pgf/DESIGN-InquiryFoundry.md`](.pgf/DESIGN-InquiryFoundry.md) | **권위 설계** v0.2.4 (PG + PGF) |
 | [`.pgf/REVIEW-InquiryFoundry.md`](.pgf/REVIEW-InquiryFoundry.md) | 3시각 design-review, 개정 기록 |
 | [`.pgf/WORKPLAN-InquiryFoundry.md`](.pgf/WORKPLAN-InquiryFoundry.md) | 실행 계획 @v:0.2.3 |
 | [`.pgf/status-InquiryFoundry.json`](.pgf/status-InquiryFoundry.json) | 노드 상태 (22 nodes) |
