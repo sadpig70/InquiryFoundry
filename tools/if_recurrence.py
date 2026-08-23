@@ -68,20 +68,27 @@ def allocated_at(if_root, run):
 
 
 def delivered(if_root, run):
-    """(codes, window) actually handed to generators.
+    """(codes, window, withheld) actually handed to generators.
 
     The two blocks swapped fields at live13: `avoid_registry` carries the
     persistent taxonomy, `avoid_patterns` the verbatim recent window. Reading
     only the field named "avoid_patterns" mislabels every run on either side.
+
+    `withheld` separates a control arm from a run that simply had no codes to
+    send -- both show zero. Runs predating the flag report None, which is not
+    False: it means the record cannot say, and those runs are all pre-taxonomy.
     """
     f = if_root / "runs" / run / "allocation.yaml"
     if not f.is_file():
-        return 0, 0
-    slots = (yaml.safe_load(f.read_text(encoding="utf-8")) or {}).values()
+        return 0, 0, None
+    slots = list((yaml.safe_load(f.read_text(encoding="utf-8")) or {}).values())
     if not slots:
-        return 0, 0
+        return 0, 0, None
+    flags = [s.get("avoid_codes_withheld") for s in slots]
+    withheld = None if all(v is None for v in flags) else bool(any(flags))
     return (max(len(s.get("avoid_registry") or []) for s in slots),
-            max(len(s.get("avoid_patterns") or []) for s in slots))
+            max(len(s.get("avoid_patterns") or []) for s in slots),
+            withheld)
 
 
 def main(argv=None):
@@ -112,9 +119,9 @@ def main(argv=None):
         blind[r] = bool(prev and a and a < closed[prev])
         prev = r
 
-    print("%-22s %-11s %4s %4s %4s %5s  %5s %6s  %-8s %s" % (
+    print("%-22s %-11s %4s %4s %4s %5s  %5s %6s %-9s %-8s %s" % (
         "run", "domain", "n", "ado", "rej", "rej%", "codes", "window",
-        "briefing", "recurrence"))
+        "arm", "briefing", "recurrence"))
     totals = {"verbatim": 0, "near": 0, "blind_verbatim": 0}
     detail = []
     for run in runs:
@@ -123,7 +130,7 @@ def main(argv=None):
         ado = sum(1 for d in dec if d["decision"] == "adopt")
         rej = sum(1 for d in dec if d["decision"] == "reject")
         tot = len(dec)
-        codes, window = delivered(if_root, run)
+        codes, window, withheld = delivered(if_root, run)
         prior = [q for q in qs if q["status"] == "REJECTED"
                  and order.get(q["run"], 1e9) < order[run]]
         best = []
@@ -144,9 +151,10 @@ def main(argv=None):
             totals["blind_verbatim"] += len(vb)
         detail.extend(vb + nr)
         mark = "%d verbatim" % len(vb) if vb else ("%d near" % len(nr) if nr else "-")
-        print("%-22s %-11s %4d %4d %4d %4d%%  %5d %6d  %-8s %s" % (
+        arm = "withheld" if withheld else ("-" if withheld is None else "given")
+        print("%-22s %-11s %4d %4d %4d %4d%%  %5d %6d %-9s %-8s %s" % (
             run, cur[0]["domain"] if cur else "-", len(cur), ado, rej,
-            round(100 * rej / tot) if tot else 0, codes, window,
+            round(100 * rej / tot) if tot else 0, codes, window, arm,
             "BLIND" if blind[run] else "informed", mark))
 
     print()

@@ -142,6 +142,11 @@ SCHEMAS: dict[str, dict] = {
             "domain": _str(),
             "goal": {"enum": GOALS},
             "constraints": {"type": "array", "items": _str()},
+            # Experiment control: withhold the taxonomy codes from generators
+            # while the reviewer keeps classifying with them, so both arms of a
+            # run record defects in the same coordinate system. Not the same as
+            # lowering `ratified`, which takes the reviewer down too.
+            "withhold_avoid_codes": {"type": "boolean"},
             "forbidden_premises": {"type": "array", "items": _str()},
             "must_consider_slices": {"type": "object", "additionalProperties": {"type": "array", "items": _str()}},
             "success_criteria": _str(),

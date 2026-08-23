@@ -569,6 +569,78 @@ def test_every_slot_receives_every_avoid_pattern():
     assert alloc["LWAR5"]["avoid_patterns"] == avoid
 
 
+def test_withhold_avoid_codes_blinds_generators_only():
+    """The switch that makes the taxonomy testable.
+
+    Lowering `ratified` looks like the same thing. It is not: that flag also
+    empties `review_packet`'s `known_patterns` and short-circuits
+    `require_known_code`, so the control arm's rejects come back as free text
+    and the arms can no longer be compared by defect kind — the whole point of
+    running one. This withholds on the generator side and leaves the verbatim
+    window alone, so the arms differ in exactly one thing.
+    """
+    brief = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]},
+             "withhold_avoid_codes": True}
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
+    ]
+    avoid = {"patterns": ["DUP-RESUBMIT — x", "PREDETERMINED — y"],
+             "recent_reasons": ["a verbatim reason", "another one"]}
+    alloc = build_allocation(brief, lwars, avoid)
+    for lid, slot in alloc.items():
+        assert slot["avoid_registry"] == [], lid
+        # The verbatim window is not the treatment and must survive untouched,
+        # or the arms differ in two things and the run answers nothing.
+        assert slot["avoid_patterns"] == avoid["recent_reasons"], lid
+        assert slot["avoid_codes_withheld"] is True, lid
+
+
+def test_allocation_records_which_arm_a_run_was_in():
+    """An empty `avoid_registry` is ambiguous: withheld, or nothing to send.
+
+    RUN-20260821-live8 was allocated before the previous run closed, so its
+    generators got an empty window while the record looked identical to a fed
+    run, and the three verbatim regenerations it produced read as a failure of
+    the loop until the allocation timestamps were compared (§7.24). The flag is
+    written on every run so that inference is never needed again.
+    """
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
+    ]
+    base = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]}}
+    fed = build_allocation(base, lwars, {"patterns": ["DUP-RESUBMIT — x"],
+                                         "recent_reasons": []})
+    for slot in fed.values():
+        assert slot["avoid_codes_withheld"] is False
+        assert slot["avoid_registry"] == ["DUP-RESUBMIT — x"]
+    # Nothing to send is not the same state as deliberately withholding.
+    empty = build_allocation(base, lwars, {"patterns": [], "recent_reasons": []})
+    for slot in empty.values():
+        assert slot["avoid_codes_withheld"] is False
+        assert slot["avoid_registry"] == []
+
+
+def test_withhold_avoid_codes_is_accepted_by_the_brief_schema():
+    """`brief` is additionalProperties: False, so an unknown control field is a
+    hard failure at validate time rather than a silently ignored one. That is
+    the correct direction — `constraints` sat in the schema unread for weeks
+    (§7.12) — but it means the field has to be declared to be usable."""
+    brief = {
+        "brief_id": "B-1", "domain": "preference", "goal": "discovery",
+        "evidence_hints": {"papers": ["p/a"]},
+        "budget": {"max_rounds": 1, "max_seeds_per_lwar": 3},
+        "withhold_avoid_codes": True,
+    }
+    validate_obj("brief", brief)
+    brief["withhold_avoid_codes"] = "yes"
+    with pytest.raises(SchemaError):
+        validate_obj("brief", brief)
+
+
 def test_brief_constraints_reach_every_generator_slot():
     """`constraints` has been in the brief schema from the start and nothing ever
     read it, so an operator could state a rule, watch the brief validate, and

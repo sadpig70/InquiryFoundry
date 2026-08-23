@@ -65,6 +65,16 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
         avoid = list(avoid.get("recent_reasons") or [])
     else:
         patterns, avoid = [], list(avoid or [])
+    # Withholding the codes from generators is how the taxonomy gets tested.
+    # Lowering `ratified` looks like the same thing and is not: that flag also
+    # empties the reviewer's `known_patterns` and disables `require_known_code`,
+    # so the control arm's rejects come back as free text and the two arms stop
+    # being comparable by defect kind — which is the only reason to run the arm.
+    # It also keys that free text on its first clause once the flag goes back
+    # up, in an append-only log. This withholds on the generator side alone.
+    withheld = bool(brief.get("withhold_avoid_codes"))
+    if withheld:
+        patterns = []
     offset = run_operator_offset(brief)
     table, used = {}, set()
     for i, lwar in enumerate(lwars):
@@ -96,6 +106,12 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
             # Recurring traps, abstracted to their structure. Persist across
             # runs where the verbatim reasons above do not.
             "avoid_registry": list(patterns),
+            # Recorded even when false, because an empty `avoid_registry` is
+            # ambiguous in the record: withheld on purpose, or nothing to send.
+            # RUN-20260821-live8 cost a wrong conclusion to exactly that kind of
+            # ambiguity (§7.24) — the run looked fed and was not. A reader of
+            # allocation.yaml should never have to infer which arm a run was in.
+            "avoid_codes_withheld": withheld,
             # A standing rule for every generator, unlike avoid_patterns, which
             # is a list of things that already went wrong. The brief has carried
             # this field since the schema was written and nothing ever read it,
