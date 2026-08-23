@@ -303,26 +303,82 @@ class Store:
         entries.sort(key=lambda e: order.index(e["runs"][-1]))
         return entries[-self.REGISTRY_CAP:]
 
-    def dormant_codes(self) -> set[str]:
-        """Codes that were used and then fell out of use.
+    def domain_run_order(self, domain: str) -> list[str]:
+        """Closed runs of one domain, oldest first.
 
-        Retirement is disuse, not eviction — a code stops being carried when
-        nothing has matched it for `REGISTRY_DISUSE_RUNS` closed runs. Computed
-        across domains, because the codes name structural defects in a test
-        design and nothing about them is domain-specific: every one of the eight
-        seeds describes a broken argument, not a fact about scaling laws.
-        A code that has never been used is not dormant — it has not had its turn.
+        Every closed run counts, not only those that recorded a pattern: a run
+        that met a defect and did not reproduce it is exactly the evidence
+        disuse is meant to accumulate.
+        """
+        return self._run_order([r for r in load_jsonl(self.decisions)
+                                if r.get("domain") == domain])
+
+    def dormant_codes(self) -> set[str]:
+        """Codes that were used and then fell out of use, per domain.
+
+        Retirement is disuse, not eviction. The clock used to run on one global
+        run sequence, which had a consequence nobody chose: five `preference`
+        runs retired every code `scaling` had established, so returning to
+        `scaling` would start without the names of the traps that domain
+        actually sprang. The carry-over that RUN-20260822-live14 measured — a
+        new domain opening with the vocabulary already in hand — annulled
+        itself by staying in one domain long enough.
+
+        So each code keeps a separate clock in every domain where it has ever
+        been recorded, and goes dormant only when all of them have run out. A
+        code that has never been used anywhere is not dormant — it has not had
+        its turn. Fable set this after five runs showed generator-side delivery
+        contributing nothing measurable; the point was not to retire faster but
+        to stop retiring the wrong things.
         """
         rows = [r for r in load_jsonl(self.decisions)
                 if r.get("decision") == "reject" and r.get("reason")
                 and not r.get("informational") and (r.get("pattern") or "").strip()
                 and (r.get("reason_kind") or "question_defect") == "question_defect"]
-        order = self._run_order(rows)
-        recent = set(order[-self.REGISTRY_DISUSE_RUNS:])
-        last_seen: dict[str, str] = {}
+        seen: dict[str, dict[str, str]] = {}
         for r in rows:
-            last_seen[self.registry_key(r["pattern"])] = r.get("run_id")
-        return {code for code, run in last_seen.items() if run not in recent}
+            code = self.registry_key(r["pattern"])
+            dom = r.get("domain") or ""
+            seen.setdefault(code, {})[dom] = r.get("run_id")
+        recent: dict[str, set[str]] = {}
+        dormant = set()
+        for code, by_domain in seen.items():
+            live = False
+            for dom, run_id in by_domain.items():
+                if dom not in recent:
+                    order = self.domain_run_order(dom)
+                    recent[dom] = set(order[-self.REGISTRY_DISUSE_RUNS:])
+                if run_id in recent[dom]:
+                    live = True
+                    break
+            if not live:
+                dormant.add(code)
+        return dormant
+
+    def constraint_covered(self) -> dict[str, str]:
+        """Codes a `constraints` clause has been written for, and which run."""
+        doc = load_yaml(self.root / "memory" / "avoid_codes.yaml")
+        if not isinstance(doc, dict):
+            return {}
+        out = {}
+        for c in doc.get("codes") or []:
+            if c.get("constraint_covered"):
+                out[c["code"]] = str(c["constraint_covered"])
+        return out
+
+    def constraint_due(self, domain: str) -> list[str]:
+        """Registered codes with no clause written for them yet.
+
+        The one verified win in this whole line went code -> registry entry ->
+        a `constraints` clause that named the substitute as well as the ban ->
+        the defect family gone and staying gone without the code. Nothing made
+        that happen except someone noticing; Fable's second decision turned it
+        into an obligation, and an obligation nobody is shown is a convention.
+        So closing a run reports what it owes.
+        """
+        covered = self.constraint_covered()
+        return [e["pattern"] for e in self.avoid_registry(domain)
+                if e["pattern"] not in covered]
 
     def write_avoid_registry(self, domain: str) -> Path:
         """Publish the derived view. Nothing reads this file — it exists so a

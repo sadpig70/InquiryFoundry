@@ -611,17 +611,90 @@ def test_allocation_records_which_arm_a_run_was_in():
         {"lwar_id": "LWAR2", "vendor_family": "google"},
         {"lwar_id": "LWAR3", "vendor_family": "xai"},
     ]
+    # Delivery is now opt-in, so a brief that says nothing withholds.
     base = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]}}
-    fed = build_allocation(base, lwars, {"patterns": ["DUP-RESUBMIT — x"],
-                                         "recent_reasons": []})
+    silent = build_allocation(base, lwars, {"patterns": ["DUP-RESUBMIT — x"],
+                                            "recent_reasons": []})
+    for slot in silent.values():
+        assert slot["avoid_codes_withheld"] is True
+        assert slot["avoid_registry"] == []
+    deliver = dict(base, withhold_avoid_codes=False)
+    fed = build_allocation(deliver, lwars, {"patterns": ["DUP-RESUBMIT — x"],
+                                            "recent_reasons": []})
     for slot in fed.values():
         assert slot["avoid_codes_withheld"] is False
         assert slot["avoid_registry"] == ["DUP-RESUBMIT — x"]
     # Nothing to send is not the same state as deliberately withholding.
-    empty = build_allocation(base, lwars, {"patterns": [], "recent_reasons": []})
+    empty = build_allocation(deliver, lwars, {"patterns": [], "recent_reasons": []})
     for slot in empty.values():
         assert slot["avoid_codes_withheld"] is False
         assert slot["avoid_registry"] == []
+
+
+def test_disuse_clock_runs_per_domain(tmp_path):
+    """A quiet domain must not retire another domain's vocabulary.
+
+    The clock used to run on one global run sequence, so five `preference`
+    runs retired every code `scaling` had established and a return to
+    `scaling` would have started without the names of the traps it actually
+    sprang — annulling the carry-over live14 had measured. Each code now keeps
+    a clock in every domain it has appeared in and sleeps only when all of them
+    have run out.
+    """
+    root = tmp_path / ".if"
+    (root / "memory").mkdir(parents=True)
+    (root / "memory" / "avoid_codes.yaml").write_text(
+        yaml.safe_dump({"ratified": True,
+                        "codes": [{"code": "OLD", "def": "d"},
+                                  {"code": "NEW", "def": "d"}]}),
+        encoding="utf-8")
+    rows = [
+        {"run_id": "R-a1", "domain": "alpha", "decision": "reject",
+         "reason": "r", "pattern": "OLD — x", "informational": False},
+    ]
+    # Four closed runs of the other domain, none of them touching OLD.
+    for i in range(1, 5):
+        rows.append({"run_id": "R-b%d" % i, "domain": "beta", "decision": "reject",
+                     "reason": "r", "pattern": "NEW — x", "informational": False})
+    with (root / "memory" / "decisions.jsonl").open("w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, ensure_ascii=False) + chr(10))
+    store = Store(str(root))
+    assert store.domain_run_order("alpha") == ["R-a1"]
+    # `alpha` has run once since OLD was seen, so OLD is still live there --
+    # and beta's four runs cannot retire it.
+    assert store.dormant_codes() == set()
+
+
+def test_registry_entry_reports_the_clause_it_still_owes(tmp_path):
+    """Entering the registry is what obliges someone to write a rule.
+
+    The single verified win went code -> registry entry -> a constraints clause
+    naming the substitute as well as the ban -> the defect family gone, and
+    staying gone once the code was withheld. Nothing produced that chain except
+    someone noticing it was due, so a close now says what it owes. Reported,
+    not enforced: blocking a close would only buy a clause written to unblock.
+    """
+    root = tmp_path / ".if"
+    (root / "memory").mkdir(parents=True)
+    (root / "memory" / "avoid_codes.yaml").write_text(
+        yaml.safe_dump({"ratified": True,
+                        "codes": [{"code": "PAID", "def": "d",
+                                   "constraint_covered": "RUN-x"},
+                                  {"code": "OWED", "def": "d"}]}),
+        encoding="utf-8")
+    rows = []
+    for code in ("PAID", "OWED"):
+        for run in ("R-1", "R-2"):          # two runs each: both enter
+            rows.append({"run_id": run, "domain": "alpha", "decision": "reject",
+                         "reason": "r", "pattern": code + " - x",
+                         "informational": False})
+    with (root / "memory" / "decisions.jsonl").open("w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, ensure_ascii=False) + chr(10))
+    store = Store(str(root))
+    assert {e["pattern"] for e in store.avoid_registry("alpha")} == {"PAID", "OWED"}
+    assert store.constraint_due("alpha") == ["OWED"]
 
 
 def test_withhold_avoid_codes_is_accepted_by_the_brief_schema():

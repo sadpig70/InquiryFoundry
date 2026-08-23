@@ -443,8 +443,18 @@ def close_review(store: Store, run_dir: Path) -> dict:
         (store.load_question(d["question_id"]) or {}).get("lineage", {}).get("domain")
         for d in doc["decisions"]
     }
+    due = []
     for domain in sorted(x for x in domains if x):
         store.write_avoid_registry(domain)
+        due.extend(store.constraint_due(domain))
+    # What this close owes: codes that recurred into the registry and still
+    # have no clause. Reported rather than enforced -- a clause is written by
+    # a person reading the defect, and blocking the close would only produce
+    # a clause written to unblock it.
+    if due:
+        report["constraint_due"] = sorted(set(due))
+    else:
+        report.pop("constraint_due", None)
     report["human"] = "closed"
     report["reviewer_kind"] = decided_by
     # A reopened run adds to what it already reported rather than replacing it:
@@ -455,4 +465,7 @@ def close_review(store: Store, run_dir: Path) -> dict:
     report["dissent_referenced"] = True
     report["decided"] = decided
     atomic_write_yaml(run_dir / "report.yaml", report)
-    return {"status": "closed", "dissent_referenced": True, "decided": decided}
+    out = {"status": "closed", "dissent_referenced": True, "decided": decided}
+    if due:
+        out["constraint_due"] = sorted(set(due))
+    return out

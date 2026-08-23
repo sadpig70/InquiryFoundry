@@ -56,6 +56,9 @@ protocol_valid = computed from observations (see IfCycle). never a constant.
 | D24 | 택소노미 효과 측정용 통제는 **`brief.withhold_avoid_codes`** 다. `avoid_codes.ratified` 를 내리는 것으로 대신하지 않는다 — 그 플래그는 리뷰어의 `known_patterns` 와 `require_known_code` 까지 끄므로 통제군 기각이 자유서술로 남아 결함 종류 비교가 불가능해지고, `ratified` 복귀 후 그 자유서술이 append-only 로그에서 첫 절로 키된다. `avoid_codes_withheld` 는 **false 여도 기록**한다 — 빈 배급은 "감췄다" 와 "보낼 게 없었다" 가 구별되지 않는다. |
 | D25 | `brief.constraints` 는 전 생성기에게 전달되는 **상시 규칙**이다. 스키마에 있으면서 아무도 읽지 않던 필드였다. **여기에 예산·규모 제한을 넣지 않는다** — 넣으면 질문이 우리 지갑에 맞춰 축소된다. IF 는 자기 예산을 모른다. |
 | D26 | **파생 뷰는 권위가 아니다.** `.if/memory/avoid_registry.yaml` 은 사람이 보라고 발행하며 아무 코드도 읽지 않는다. 상태를 물을 때는 `store.avoid_registry(domain)` 을 호출한다. 이 파일을 읽고 판단해서 한 번 틀린 결론을 냈다. |
+| D27 | **코드는 리뷰어의 장부이고 생성기는 규칙을 받는다.** `withhold_avoid_codes` 기본값 `true`. 생성기에 가는 것은 `constraints` 와 축어 창뿐이다. 다섯 런(live14~18)에서 생성기 측 배급의 기여가 관측되지 않았고, 유일하게 움직인 지표는 배급에 불리했다. 리뷰어 측(코드 의무·등재·불용·린트)은 전부 유지한다 — 그 축은 측정되지 않았다. |
+| D28 | **등재는 조항 합성의 발동점이다.** 코드가 등록부에 들어가면 그 결함군에 대한 `constraints` 조항(금지 + **대체 경로**)을 쓴다. 마감 보고의 `constraint_due` 가 빚을 싣는다. 검증된 유일한 경로가 이것이다 — 코드가 명명 → 등재 → 조항 → 결함군 소멸, 그리고 코드를 빼도 유지. |
+| D29 | **불용 시계는 도메인별이다.** 코드는 자신이 관측된 **모든** 도메인에서 각각 `REGISTRY_DISUSE_RUNS` 마감 런 동안 재발이 없어야 휴면한다. 전역 시계는 한 도메인에 오래 머무는 것만으로 다른 도메인의 어휘를 은퇴시켰다 — 이월 이득이 스스로 무효화된다. 대가: 쉬는 도메인은 시계가 멈춰 그 코드가 은퇴하지 않는다. |
 
 ---
 
@@ -102,7 +105,7 @@ protocol_valid = computed from observations (see IfCycle). never a constant.
 
 | 필드 | 출처 | 도달 | 비고 |
 |---|---|---|---|
-| `avoid_registry` | `query_avoid_patterns(domain)["patterns"]` | **생성기** | 택소노미 코드. `withhold_avoid_codes` 로 차단 가능 |
+| `avoid_registry` | `query_avoid_patterns(domain)["patterns"]` | ~~생성기~~ | 택소노미 코드. **기본 차단**(D27). `withhold_avoid_codes: false` 로만 배급 |
 | `avoid_patterns` | 같은 함수의 `["recent_reasons"]` | **생성기** | 축어 사유. 차단 스위치 없음 |
 | `constraints` | `brief.constraints` | **생성기 + 리뷰어** | 리뷰어에는 `review_packet` 이 실어 나른다 |
 | `known_patterns` | 같은 `["patterns"]` | **리뷰어** | 생성기와 **같은 원천, 다른 경로**. 브리프 스위치의 영향을 받지 않는다 |

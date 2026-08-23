@@ -142,10 +142,14 @@ SCHEMAS: dict[str, dict] = {
             "domain": _str(),
             "goal": {"enum": GOALS},
             "constraints": {"type": "array", "items": _str()},
-            # Experiment control: withhold the taxonomy codes from generators
-            # while the reviewer keeps classifying with them, so both arms of a
-            # run record defects in the same coordinate system. Not the same as
-            # lowering `ratified`, which takes the reviewer down too.
+            # Withhold the taxonomy codes from generators while the reviewer
+            # keeps classifying with them. **Defaults to true** — five runs
+            # found no generator-side contribution, so the codes are a ledger
+            # the reviewer keeps rather than a lesson the generator is taught.
+            # Set false to deliver them, which is the pre-registered response
+            # when a registered defect survives the constraint written for it.
+            # Not the same as lowering `ratified`, which takes the reviewer
+            # down too and puts free text in an append-only log.
             "withhold_avoid_codes": {"type": "boolean"},
             "forbidden_premises": {"type": "array", "items": _str()},
             "must_consider_slices": {"type": "object", "additionalProperties": {"type": "array", "items": _str()}},

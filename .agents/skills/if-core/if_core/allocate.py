@@ -65,14 +65,24 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
         avoid = list(avoid.get("recent_reasons") or [])
     else:
         patterns, avoid = [], list(avoid or [])
-    # Withholding the codes from generators is how the taxonomy gets tested.
-    # Lowering `ratified` looks like the same thing and is not: that flag also
-    # empties the reviewer's `known_patterns` and disables `require_known_code`,
-    # so the control arm's rejects come back as free text and the two arms stop
-    # being comparable by defect kind — which is the only reason to run the arm.
-    # It also keys that free text on its first clause once the flag goes back
-    # up, in an append-only log. This withholds on the generator side alone.
-    withheld = bool(brief.get("withhold_avoid_codes"))
+    # Withheld by default since Fable's second taxonomy decision (2026-08-23).
+    # Five runs measured generator-side delivery and found no contribution:
+    # RUN-20260822-live16 produced three questions carrying exactly the defect
+    # whose code its generators had been handed for two runs, and
+    # RUN-20260823-live18 withdrew all eight codes without anything getting
+    # worse. The only metric that moved at all moved against delivery — cited
+    # sources recovered from 7 to 9 once the codes stopped going out. So the
+    # codes stay a reviewer's ledger, and what reaches a generator is rules
+    # (`constraints`) and the verbatim window, which is where the one verified
+    # win came from: a code names a defect, recurrence enters it in the
+    # registry, and that forces a constraint that actually binds.
+    #
+    # Set `withhold_avoid_codes: false` to deliver them — targeted restoration
+    # is the pre-registered response if a registered defect survives its
+    # constraint. Only the generator side is affected either way: the reviewer
+    # keeps `known_patterns` and `require_known_code`, which lowering
+    # `ratified` would not (see 7.25).
+    withheld = bool(brief.get("withhold_avoid_codes", True))
     if withheld:
         patterns = []
     offset = run_operator_offset(brief)
