@@ -13,7 +13,12 @@ import sys
 
 sys.path.insert(0, str(CORE))
 
-from if_core.allocate import build_allocation, vendor_family
+from if_core.allocate import (
+    build_allocation,
+    run_objective_offset,
+    run_operator_offset,
+    vendor_family,
+)
 from if_core.bus import (
     propose_task_id,
     assert_visible,
@@ -24,7 +29,7 @@ from if_core.bus import (
     phase_of,
     publish_collect,
 )
-from if_core.const import OPERATORS
+from if_core.const import OBJECTIVES, OPERATORS
 from if_core.cycle import close_run, inquiry_cycle, mint_anon, reject_excluded
 from if_core.gates import mechanical_gates, source_in_hints
 from if_core.schema import SchemaError, validate_obj
@@ -567,6 +572,53 @@ def test_every_slot_receives_every_avoid_pattern():
     # Distinct lists, so a downstream mutation cannot leak between slots.
     alloc["LWAR4"]["avoid_patterns"].append("mutated")
     assert alloc["LWAR5"]["avoid_patterns"] == avoid
+
+
+def test_objective_rotates_independently_of_operators():
+    """Slot 3 drew `info_per_cost` six runs running, and six of seven
+    DUP-RESUBMIT rejects came from it.
+
+    `run_operator_offset` rotated operators after live8 and left the objective
+    on `OBJECTIVES[i % 3]`, so one slot kept one objective forever. Whether the
+    objective selects for questions a larger adopted design already answers, or
+    just meets a saturating space first, can only be told by rotating: the
+    defect follows the knob or it follows the slot.
+
+    The two offsets come from different bytes of the same digest. Sharing one
+    would tie the knobs together again, so a run could never separate them.
+    """
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
+    ]
+    base = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]},
+            "budget": {"max_seeds_per_lwar": 3}}
+    seen_pairs, seen_objectives = set(), set()
+    for n in range(40):
+        brief = dict(base, brief_id="B-%03d" % n)
+        alloc = build_allocation(brief, lwars, None)
+        objectives = [alloc[k]["objective"] for k in ("LWAR1", "LWAR2", "LWAR3")]
+        # Still a permutation: every slot gets a different objective.
+        assert len(set(objectives)) == 3, objectives
+        seen_objectives.add(objectives[2])
+        seen_pairs.add((run_operator_offset(brief), run_objective_offset(brief)))
+    # The slot that was stuck now sees every objective.
+    assert seen_objectives == set(OBJECTIVES)
+    # And the two offsets are not a function of each other, or the run that
+    # rotates operators would rotate objectives in lockstep.
+    by_ops = {}
+    for ops, obj in seen_pairs:
+        by_ops.setdefault(ops, set()).add(obj)
+    assert any(len(v) > 1 for v in by_ops.values()), by_ops
+
+
+def test_objective_offset_is_stable_and_process_independent():
+    """Same brief_id, same objective -- a rerun must be reproducible, which
+    `hash()` would break since it is salted per process."""
+    brief = {"brief_id": "RUN-20260823-live19"}
+    assert run_objective_offset(brief) == run_objective_offset(dict(brief))
+    assert run_objective_offset({"brief_id": ""}) == 0
 
 
 def test_withhold_avoid_codes_blinds_generators_only():

@@ -38,6 +38,33 @@ def run_operator_offset(brief: dict) -> int:
     return int.from_bytes(digest[:4], "big") % len(OPERATORS)
 
 
+def run_objective_offset(brief: dict) -> int:
+    """Rotate which objective a slot receives, per run.
+
+    `run_operator_offset` fixed this for operators after live8 and left the
+    objective on `OBJECTIVES[i % 3]`, so slot 3 drew `info_per_cost` for six
+    consecutive `preference` runs. Six of the seven DUP-RESUBMIT rejects came
+    from that slot, and in live17 and live18 every question it produced was
+    rejected for it while the other two slots went six for six — which is what
+    a question whose answer a larger adopted design already yields looks like
+    when the objective rewards cheap information.
+
+    Whether the objective causes that or merely meets a saturating question
+    space first is not known, and rotating is the only way to tell: if it is
+    the objective the defect follows the knob, and if it is saturation it
+    follows whoever holds `info_per_cost`.
+
+    Derived from a different slice of the same digest than the operator
+    offset, so the two knobs move independently — sharing one would make them
+    inseparable again, in a different way.
+    """
+    brief_id = str(brief.get("brief_id") or "")
+    if not brief_id:
+        return 0
+    digest = hashlib.sha256(brief_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[4:8], "big") % len(OBJECTIVES)
+
+
 def leftover_ops(used_keys: set, family: str, ev: str, preferred: list | None = None) -> list[str] | None:
     for shift in range(len(OPERATORS)):
         ops = default_ops_for(shift, 3)
@@ -86,6 +113,7 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
     if withheld:
         patterns = []
     offset = run_operator_offset(brief)
+    obj_offset = run_objective_offset(brief)
     table, used = {}, set()
     for i, lwar in enumerate(lwars):
         fam = vendor_family(lwar)
@@ -106,7 +134,7 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
             "vendor_family": fam,
             "operators": ops,
             "evidence_kind": ev,
-            "objective": OBJECTIVES[i % 3],
+            "objective": OBJECTIVES[(i + obj_offset) % len(OBJECTIVES)],
             # Every slot gets every pattern. Operators, evidence_kind and
             # objective are the diversity knobs; a rejected trap is not one.
             # Striding these across slots left each generator blind to most of

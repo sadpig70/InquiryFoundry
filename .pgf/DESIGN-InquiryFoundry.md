@@ -59,6 +59,7 @@ protocol_valid = computed from observations (see IfCycle). never a constant.
 | D27 | **코드는 리뷰어의 장부이고 생성기는 규칙을 받는다.** `withhold_avoid_codes` 기본값 `true`. 생성기에 가는 것은 `constraints` 와 축어 창뿐이다. 다섯 런(live14~18)에서 생성기 측 배급의 기여가 관측되지 않았고, 유일하게 움직인 지표는 배급에 불리했다. 리뷰어 측(코드 의무·등재·불용·린트)은 전부 유지한다 — 그 축은 측정되지 않았다. |
 | D28 | **등재는 조항 합성의 발동점이다.** 코드가 등록부에 들어가면 그 결함군에 대한 `constraints` 조항(금지 + **대체 경로**)을 쓴다. 마감 보고의 `constraint_due` 가 빚을 싣는다. 검증된 유일한 경로가 이것이다 — 코드가 명명 → 등재 → 조항 → 결함군 소멸, 그리고 코드를 빼도 유지. |
 | D29 | **불용 시계는 도메인별이다.** 코드는 자신이 관측된 **모든** 도메인에서 각각 `REGISTRY_DISUSE_RUNS` 마감 런 동안 재발이 없어야 휴면한다. 전역 시계는 한 도메인에 오래 머무는 것만으로 다른 도메인의 어휘를 은퇴시켰다 — 이월 이득이 스스로 무효화된다. 대가: 쉬는 도메인은 시계가 멈춰 그 코드가 은퇴하지 않는다. |
+| D30 | **`objective` 도 런마다 회전한다.** `run_operator_offset` 이 operators 를 고친 뒤에도 `objective` 는 `OBJECTIVES[i % 3]` 로 남아 슬롯 3 이 여섯 런 연속 `info_per_cost` 를 받았고, `DUP-RESUBMIT` 기각 7건 중 6건이 그 슬롯에서 나왔다. offset 은 **같은 digest 의 다른 바이트**(`[4:8]`)에서 유도한다 — operators 와 offset 을 공유하면 두 손잡이가 함께 움직여 영원히 분리되지 않는다. `objective` 는 이종성 키에 없으므로 회전이 그 보장을 건드리지 않는다. |
 
 ---
 
@@ -977,6 +978,7 @@ def build_allocation(brief: dict, lwars: list, avoid=None) -> dict:
     if withheld:
         patterns = []
     offset = run_operator_offset(brief)
+    obj_offset = run_objective_offset(brief)      # digest[4:8] — operators 와 독립
     table, used = {}, set()
     for i, lwar in enumerate(lwars):
         fam = vendor_family(lwar)
@@ -996,7 +998,7 @@ def build_allocation(brief: dict, lwars: list, avoid=None) -> dict:
             "vendor_family": fam,
             "operators": ops,
             "evidence_kind": ev,
-            "objective": objs[i % 3],
+            "objective": objs[(i + obj_offset) % len(objs)],   # 회전 (D30)
             "avoid_patterns": list(reasons),        # 축어 최근 창 — 전원 동일 (D22)
             "avoid_registry": list(patterns),       # 택소노미 코드 — 전원 동일 (D23)
             "avoid_codes_withheld": withheld,       # false 여도 기록한다 (D24)
