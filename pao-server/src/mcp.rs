@@ -11,8 +11,8 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub const WAIT_MAX_S: u64 = 600;
-pub const WAIT_DEFAULT_S: u64 = 240;
+pub const WAIT_MAX_S: u64 = 3600;
+pub const WAIT_DEFAULT_S: u64 = 3600;
 
 pub struct Ctx {
     pub bus: Arc<Bus>,
@@ -106,7 +106,7 @@ fn tool_schemas() -> Value {
                 "properties": {
                     "lwar_id": {"type": "string", "description": "e.g. LWAR1"},
                     "timeout_s": {"type": "integer", "minimum": 1, "maximum": WAIT_MAX_S,
-                                   "description": "server-side wait ceiling; default 240"}
+                                   "description": "server-side wait ceiling; default and maximum 3600 (60min) - matches the old Python watcher duty cycle so an idle LWAR spends about one turn per hour"}
                 },
                 "required": ["lwar_id"]
             }
@@ -273,6 +273,16 @@ mod tests {
         assert_eq!(r["result"]["structuredContent"]["arrived"], false);
         assert!(c.hub.waiting_ids().is_empty(), "waiter must deregister");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn schema_advertises_the_hour_ceiling() {
+        // The ceiling exists to match the old Python watcher's 50-minute duty
+        // cycle: an idle LWAR should spend about one turn per hour, not six.
+        assert_eq!(WAIT_MAX_S, 3600);
+        assert_eq!(WAIT_DEFAULT_S, WAIT_MAX_S);
+        let schema = tool_schemas();
+        assert_eq!(schema[0]["inputSchema"]["properties"]["timeout_s"]["maximum"], 3600);
     }
 
     #[test]

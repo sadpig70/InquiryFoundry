@@ -153,8 +153,10 @@ Run this decision flow at the start of a session, before any other action:
               event exactly as below; on `{arrived: false}` just call `watcher_wait` again }.
        The 50-minute idle cap never engages on this path (the script only runs when mail
        exists), and the server keeps this LWAR's heartbeat warm while parked. Stop looping
-       on `shutdown` / `retire` / `adp_error`, same as below. If `watcher_wait` itself
-       errors (server down), fall back to the bundled watcher for this session and note it.
+       on `shutdown` / `retire` / `adp_error`, same as below. A client-side tool **timeout** on a long wait is NOT a server error —
+       treat it as `{arrived: false}` and re-call with a smaller `timeout_s`. Only
+       fall back to the bundled watcher when `watcher_wait` fails immediately
+       (connection refused = server down), and note it.
      exit-notify (default fallback, or blocking_required, or bg_timeout_50m=fail):
        `python -u "<PAO_SKILL>/scripts/adp_exit_notify.py" --identity-file <abs>`
        (same as `lwar.py adp` / `adp-exit` / `adp-kimi`). Process exits on first
