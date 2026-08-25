@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import threading
 import time
@@ -1465,9 +1466,28 @@ def command_status(args: argparse.Namespace) -> int:
              or _holds_claim(s))
         and not _busy(s)
     ]
+    # The MCP notification layer's own liveness (pao-server). Absent file
+    # means it has never run against this bus; a stale one means it died --
+    # the doorbell going quiet must be visible here, because every parked
+    # LWAR goes deaf with it.
+    pao_server = None
+    server_file = root / "var" / "pao_server.json"
+    if server_file.is_file():
+        try:
+            doc = json.loads(server_file.read_text(encoding="utf-8"))
+            age = (now - parse_utc(doc.get("last_seen", ""))).total_seconds()
+            pao_server = {
+                "alive": age <= 30,
+                "last_seen_age_s": round(age, 1),
+                "port": doc.get("port"),
+                "watching": doc.get("watching") or [],
+            }
+        except (ValueError, KeyError, OSError):
+            pao_server = {"alive": False, "error": "unreadable liveness file"}
     emit({
         "event": "oa_status",
         "registry_version": registry["registry_version"],
+        "pao_server": pao_server,
         "lwars": states,
         "needs_operator": needs_operator,
         # Free right now.

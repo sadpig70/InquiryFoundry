@@ -435,7 +435,8 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 | 7.35 기각 0 2연속 (live20) | 현행 | 검증 4 가 9→8. 다음 런이 3런째 |
 | 7.36 분해 결과 (live21) | 현행 | 두 가설 다 짐. **은퇴가 리뷰어 어휘를 깎는 새 결함** |
 | 7.37 휴면 강등 · 발동 조건 (Fable 결정) | 현행 | (A) **비준 완료**(2026-08-25 human), (B) 발효 |
-| 7.38 pao-server (MCP watcher) | 현행 | 구현·검증 완료. LWAR 등록과 SKILL 갱신이 남음 |
+| 7.38 pao-server (MCP watcher) | 현행 | 구현·검증 완료 |
+| 7.39 pao-server 통합 | 현행 | 실버스 왕복 4.7s 통과. **실 LWAR 세션 완주는 미검증** |
 
 **규칙 하나.** 어떤 절의 결론이 뒤집히면 **그 절 안에 정정을 쓰고 이 표를 갱신한다.**
 지우지 않는다 — 틀린 판단이 어떻게 나왔는지가 §7 의 값어치다.
@@ -2266,6 +2267,60 @@ mailbox 무접촉, batch 거부) + 실 `.pao` 스모크(watchable 4대 정확, �
 `http://127.0.0.1:8811/mcp` 등록(운영자 몫), `pao-lwar` SKILL 의 host-notify probe /
 exit-notify 분기 문서 갱신, `oa.py status` 가 `pao_server.json` 을 읽게 하는 통합.
 서버 생사는 그 파일의 `last_seen` (5초 갱신) 으로 판정한다.
+
+## 7.39 pao-server 통합 — 실버스 왕복 검증 (2026-08-25)
+
+운영자가 LWAR 런타임들에 MCP 등록을 마쳤다. 서버 밖에 남았던 3건을 처리했다.
+
+### 실전 왕복 — 실 버스에서 전부 통과
+
+서버를 실 `.pao` 에 기동(`--port 8811`)하고, 실 MCP 클라이언트가 `watcher_wait("LWAR1")`
+로 파킹한 상태에서 **실 `oa.py control ping`** 을 발행했다:
+
+- 파킹이 `watcher_status.watching=["LWAR1"]` 에 보임
+- 발행 **4.7초 후 기상**, `{arrived: true, controls: 1}`
+- heartbeat identity 보존 + `last_seen` 이 서버에 의해 갱신됨
+
+그 ping 은 LWAR1 control 큐에 남아 있다 — 재가동 시 멱등 처리된다(전례 있음, 무해).
+
+### `oa.py status` 에 `pao_server` 필드
+
+`.pao/var/pao_server.json` 의 `last_seen` 으로 판정한다(30s 문턱; 서버는 5s 갱신).
+**초인종이 죽으면 파킹된 LWAR 전원이 귀머거리가 되므로 그 죽음이 여기 보여야 한다.**
+`oa_cli.py` 양쪽 사본(pao-oa/pao-lwar) 바이트 동일 유지.
+
+```json
+"pao_server": {"alive": true, "last_seen_age_s": 1.3, "port": 8811, "watching": []}
+```
+
+파일이 없으면 `null`(이 버스에서 돈 적 없음), 낡았으면 `alive: false`.
+
+### LWAR 계약 갱신 — 기존 스크립트가 핸들러로 재사용된다
+
+`pao-lwar` SKILL 과 프로젝트 `CLAUDE.md` 의 라우팅을 갱신했다. 핵심 합성:
+
+```
+loop { watcher_wait(lwar_id, 240)
+       arrived → adp_exit_notify.py 1회 실행   # 메일이 이미 있으므로 즉시 claim 후 반환
+       미도착 → 다시 watcher_wait }
+```
+
+**`adp_exit_notify.py` 는 메일이 있으면 즉시 이벤트를 내고 종료한다** — 그래서 MCP
+경로의 claim-and-handle 단계로 무변경 재사용된다. 50분 idle cap 은 이 경로에서 절대
+발동하지 않고(메일이 있을 때만 실행), host-notify probe 는 통째로 생략된다(두 스타일
+중 고르는 질문 자체가 무의미해짐). 서버 다운 시 번들 watcher 로 폴백.
+
+### 운영 절차
+
+```bash
+# 서버 기동 (OA/운영자)
+./pao-server/target/release/pao-server.exe --root .pao --port 8811
+# 생사 확인
+curl http://127.0.0.1:8811/health          # 또는 oa.py status 의 pao_server 필드
+```
+
+**미검증으로 남은 것** — 실제 벤더 LWAR 세션이 MCP 경로로 완주하는 것(등록은 됐으나
+런타임들이 정지 중). 다음 재가동 때 각 LWAR 이 새 SKILL 절차를 타는지 관찰할 것.
 
 ---
 

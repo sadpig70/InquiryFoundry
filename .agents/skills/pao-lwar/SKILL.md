@@ -18,7 +18,7 @@ reference if the runtime version changes" means the protocol version.
 - **PAO** — Persistent Agent Orchestration: local orchestration of long-running AI runtimes over a file bus.
 - **OA** — Orchestration Agent: approves registrations, publishes tasks, validates results.
 - **LWAR** — Long-running Worker Agent Runtime: the stable execution identity (`LWAR1`, `LWAR2`, ...) that hides provider and model names.
-- **ADP** — After the once-per-session host probe, this agent runs **exactly one** bundled watcher for its style. **exit-notify:** `scripts/adp_exit_notify.py` (`lwar.py adp` / `adp-exit`) — process exits on the first task/control or after 50 idle minutes; this session reads stdout, handles the event, restarts the same script. **live-notify:** `scripts/adp_live_notify.py` (`lwar.py adp-live`) — process stays up and emits each JSON line while running; handle `task_received` without killing it. Detect the style with [references/host-notify-probe.md](references/host-notify-probe.md) before the first watcher. After the operator's one-time `/pao-lwar`, later work arrives only via the OA mailbox. See [references/adp-loop.md](references/adp-loop.md).
+- **ADP** — **mcp-notify (preferred):** if this runtime has the `pao-watcher` MCP server (tools `watcher_wait`/`watcher_status`), skip the host probe entirely — call `watcher_wait(lwar_id)` (blocking), and on `arrived` run `adp_exit_notify.py` once as the claim-and-handle step (mail is already there, so it returns immediately); then call `watcher_wait` again. The server only rings the doorbell — it never touches mailbox files, and it keeps this LWAR's heartbeat warm while parked. Fall back to the bundled watchers when the MCP tool is absent: after the once-per-session host probe, this agent runs **exactly one** bundled watcher for its style. **exit-notify:** `scripts/adp_exit_notify.py` (`lwar.py adp` / `adp-exit`) — process exits on the first task/control or after 50 idle minutes; this session reads stdout, handles the event, restarts the same script. **live-notify:** `scripts/adp_live_notify.py` (`lwar.py adp-live`) — process stays up and emits each JSON line while running; handle `task_received` without killing it. Detect the style with [references/host-notify-probe.md](references/host-notify-probe.md) before the first watcher. After the operator's one-time `/pao-lwar`, later work arrives only via the OA mailbox. See [references/adp-loop.md](references/adp-loop.md).
 - **TaskContract / ResultContract** — the task and result JSON payloads; schemas live in [schemas/](schemas/).
 
 ## 0. Self-Contained Invocation
@@ -101,7 +101,7 @@ Run this decision flow at the start of a session, before any other action:
    session. Use register.md's explicit `unreported` sentinels for unavailable
    fields; do not ask for a second bootstrap prompt and do not invent capabilities.
 3. doctor --role lwar   → unhealthy? stop and report.
-3a. Once this session, run [references/host-notify-probe.md](references/host-notify-probe.md)
+3a. If the `pao-watcher` MCP tools are available in this runtime, **skip the probe** — the notify-style question is moot (the MCP long-poll replaces both styles). Otherwise, once this session, run [references/host-notify-probe.md](references/host-notify-probe.md)
     in full **before** `register` / `response` / `adp`. Record `bg_timeout_50m`
     (background-Python timeout option; accepting the option completes that
     check — do not sleep 50 minutes), `host_blocking_cap_s` (the longest a
@@ -145,8 +145,17 @@ Run this decision flow at the start of a session, before any other action:
      Do not poll `registration_pending`. Do not end the turn to wait for inject.
      Task/control/fatal/`idle_timeout`/`registration_pending` lines carry
      `identity_file`; keep it.
-6. After identity is known, start the watcher chosen in 3a (see host-notify-probe.md):
-     exit-notify (default, or blocking_required, or bg_timeout_50m=fail):
+6. After identity is known, start the watcher chosen in 3a:
+     mcp-notify (preferred whenever the `pao-watcher` MCP tools exist):
+       loop { `watcher_wait(lwar_id, timeout_s=240)`;
+              on arrived → run `python -u "<PAO_SKILL>/scripts/adp_exit_notify.py" --identity-file <abs>`
+              once — mail is present, so it claims and returns immediately; handle the
+              event exactly as below; on `{arrived: false}` just call `watcher_wait` again }.
+       The 50-minute idle cap never engages on this path (the script only runs when mail
+       exists), and the server keeps this LWAR's heartbeat warm while parked. Stop looping
+       on `shutdown` / `retire` / `adp_error`, same as below. If `watcher_wait` itself
+       errors (server down), fall back to the bundled watcher for this session and note it.
+     exit-notify (default fallback, or blocking_required, or bg_timeout_50m=fail):
        `python -u "<PAO_SKILL>/scripts/adp_exit_notify.py" --identity-file <abs>`
        (same as `lwar.py adp` / `adp-exit` / `adp-kimi`). Process exits on first
        task/control or after 50 idle minutes. Handle stdout. After `complete`
