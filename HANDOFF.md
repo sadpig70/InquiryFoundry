@@ -2176,8 +2176,21 @@ Fable 이 선택지 1 을 취하되 한 걸음 더 갔다: 휴면을 목록에�
 사람의 병합 결정으로만 판정할 수 있다."*
 
 **`ratified` 와 같은 절차로 사람 비준 후 발효한다.** Fable 이 스스로 건 조건이다.
-`.if/memory/avoid_codes.yaml` 의 `dormancy_display_only.ratified` 가 지금 `false` 이고,
-`store.reviewer_codes()` 가 그 플래그를 읽는다. **비준 전까지 동작은 그대로다.**
+**2026-08-25 Jung Wook Yang 비준, 발효.**
+`.if/memory/avoid_codes.yaml` 의 `dormancy_display_only.ratified: true`
+(`ratification_kind: human` — §7.13 의 `delegated` 와 구별해 기록한다).
+
+발효 확인:
+
+| | 비준 전 | 비준 후 |
+|---|---:|---:|
+| 리뷰어 `known_patterns` | 7 | **8** (`UNREACHABLE-FALSIFIER` 에 `[최근 관측 없음]` 표시) |
+| 생성기 `avoid_registry` | 0 | **0** (D27 배급 중단, 영향 없음) |
+| 생성기 경로 `query_avoid_patterns` | 7 | **7** (휴면 필터 유지) |
+| 휴면 코드로 기각 작성 | 가능하나 목록에 없음 | **가능하고 목록에 있음** |
+
+`require_known_code` 는 원래부터 전체 택소노미를 읽어 휴면 코드를 받아들이고 있었다 —
+결함은 **패킷이 목록을 안 보여주는 것 하나**였고, 그 한 곳을 고쳤다.
 
 운영 규칙 하나가 추가됐다 — **정식 코드가 13개에 도달하면 병합 검토를 자동으로 사람
 안건에 올린다**(`merge_agenda_due`, 마감 보고에 실린다). 지금 8개다.
