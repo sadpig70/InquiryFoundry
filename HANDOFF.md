@@ -32,7 +32,9 @@
 
 ### 채택 판정은 Fable 5 에게 상시 위임돼 있다 (§7.13, 운영자 결정)
 
-- 리뷰어는 **LWAR4 (Fable 5, anthropic)**. **생성 로스터에 넣지 말 것** —
+- 리뷰어는 **Fable 5 (anthropic / Claude Code 슬롯)** — 재등록으로 슬롯 번호가
+  바뀔 수 있으므로 번호가 아니라 **vendor_family=anthropic** 으로 식별한다
+  (2026-08-25 현재 **LWAR3**, 그 전에는 LWAR4). **생성 로스터에 넣지 말 것** —
   `request_review` 가 자기 산출물 리뷰를 거부한다.
 - 리뷰어 패킷에는 **출처가 없다** — 벤더·연산자·기계 점수·선행 판정 모두 제외.
 - **`ratify` 없이는 어떤 런도 마감되지 않는다.** `apply_recommendation` 이 `reviewer` 를
@@ -438,6 +440,7 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 | 7.38 pao-server (MCP watcher) | 현행 | 구현·검증 완료 |
 | 7.39 pao-server 통합 | 현행 | 실버스 왕복 4.7s 통과 |
 | 7.40 실 LWAR 완주 (Grok/LWAR5) | 현행 | **§7.39 미검증 닫힘.** 5단계/6단계 구분 주의 |
+| 7.41 4대 재편 완료 | 현행 | **리뷰어=LWAR3(anthropic).** 생성 5/6/7. Grok 파킹 풀림 |
 
 **규칙 하나.** 어떤 절의 결론이 뒤집히면 **그 절 안에 정정을 쓰고 이 표를 갱신한다.**
 지우지 않는다 — 틀린 판단이 어떻게 나왔는지가 §7 의 값어치다.
@@ -2364,6 +2367,49 @@ LWAR1·2·4 도 새 세션으로 열리면 같은 흐름이다 — 신규 등록
 identity 핸드오프로 RESUME. 등록 요청이 오면 OA reconcile 이 필요하다.
 구 슬롯이 남으면 이번과 같이 은퇴시킨다.
 
+## 7.41 4대 전부 MCP watcher 로 — 로스터 재편 (2026-08-25)
+
+나머지 3대의 새 세션이 등록됐고 구 슬롯을 전부 은퇴시켰다. registry **v47**.
+
+| 슬롯 | 벤더 / 런타임 | gen | 상태 |
+|---|---|---|---|
+| **LWAR3** | anthropic / Claude Code (**Fable 5, 리뷰어**) | 5 | MCP 파킹 |
+| **LWAR5** | xai / Grok Build TUI | 2 | **파킹 풀림** (아래) |
+| **LWAR6** | google / Antigravity | 2 | MCP 파킹 |
+| **LWAR7** | openai / Codex | 1 | MCP 파킹 |
+
+`watching: [LWAR3, LWAR6, LWAR7]` — 3/4 가 초인종에 붙어 있다.
+셋 다 §7.40 과 같은 흐름을 탔다: 등록 → 승인 → 5단계 상주 watcher → **ping 으로
+소진** → 6단계에서 MCP 도구 발견 → `watcher_wait` 파킹.
+
+### 슬롯 번호가 재편됐다 — 문서가 따라가야 한다
+
+Fable 이 **LWAR4 → LWAR3**(어제 은퇴로 비워진 슬롯을 auto 배정이 재사용), 생성기가
+LWAR1/2/3 → **LWAR5/6/7** 이 됐다. §0 의 리뷰어 규칙을 **번호가 아니라
+vendor_family=anthropic** 으로 식별하도록 고쳤다 — 번호는 재등록마다 바뀐다.
+§7 의 과거 절들은 당시 번호 그대로 둔다(사고 기록).
+
+주의 둘:
+- **새 Fable 슬롯의 capabilities 가 `[coding, testing]`** 으로 자가 보고됐다(구 LWAR4 는
+  `[review]`). 리뷰어 역할은 profile 이 아니라 OA 가 review 태스크를 어디 보내느냐로
+  정해지므로 동작엔 무관하나, `--require-capability review` 자동 라우팅은 못 쓴다 —
+  `--lwar-id` 직접 지정으로 보낼 것.
+- **IF 런의 `--lwars` 인자와 `review-run --lwar-id` 가 바뀐다**:
+  생성 `LWAR5:xai,LWAR6:google,LWAR7:openai`, 리뷰 `--lwar-id LWAR3`.
+
+### LWAR5(Grok) 파킹 풀림 — turn 소모 한계의 실물
+
+Grok 은 §7.40 에서 완주했으나, `watcher_wait` 240s timeout 후 세션이 재호출하지 않아
+파킹이 풀렸다(heartbeat 는 마지막 파킹 시각에 동결 → stale). **유실은 없다** — 메일은
+버스에 쌓이고 다음 파킹 때 받는다. 서버 사망과 달리 파킹 풀림은 알림 지연일 뿐이다.
+DESIGN 이 명기한 대로 turn 소모는 이 구조가 해결하지 않는 문제다. 재개는 그 세션에
+`watcher_wait` 루프를 계속하라고 지시하는 것뿐이다(운영자 몫).
+
+### 은퇴 3건 — 런북 그대로
+
+LWAR1/2/4: `collect --archive`(outgoing 47/46/10건) → LWAR1 은 미수령 검증 ping 1건을
+`expire-controls`(instance/generation/reason 가드) → `retire-stale`(3중 가드) → `reconcile`.
+
 ---
 
 ## 10. 다음 세션 부트스트랩
@@ -2380,4 +2426,5 @@ identity 핸드오프로 RESUME. 등록 요청이 오면 OA reconcile 이 필요
 ```
 
 **IF 런을 돌리기 전 확인:** `oa.py status --busy-grace 960` 으로 `alive_count >= 3`,
-`needs_operator` 가 비어 있을 것. LWAR4(리뷰어)는 생성 로스터에 넣지 않는다.
+`needs_operator` 가 비어 있을 것. 리뷰어(anthropic 슬롯 — 번호는 registry 로 확인)는
+생성 로스터에 넣지 않는다.
