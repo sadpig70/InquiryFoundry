@@ -149,7 +149,7 @@ def review_packet(store: Store, run_dir: Path,
     # global because they name structural defects in an argument.
     brief = load_yaml(run_dir / "brief.yaml") or {}
     domain = brief.get("domain") or ""
-    known = store.query_avoid_patterns(domain)["patterns"] if domain else []
+    known = store.reviewer_codes(domain) if domain else []
     items = []
     for d in doc["decisions"]:
         q = store.load_question(d["question_id"]) or {}
@@ -455,6 +455,24 @@ def close_review(store: Store, run_dir: Path) -> dict:
         report["constraint_due"] = sorted(set(due))
     else:
         report.pop("constraint_due", None)
+    # Whether a clause has failed by Fable's counting rule, computed rather
+    # than read: the previous wording needed an interpretation memo, and the
+    # point of replacing it was that the next close should not.
+    tripped = []
+    for domain in sorted(x for x in domains if x):
+        for code in store.constraint_covered():
+            st_ = store.restoration_status(domain, code)
+            if st_.get("threshold_met"):
+                tripped.append({"domain": domain, "code": code,
+                                "action": st_["action"],
+                                "cumulative": st_["cumulative"],
+                                "max_in_one_run": st_["max_in_one_run"]})
+    if tripped:
+        report["restoration_due"] = tripped
+    else:
+        report.pop("restoration_due", None)
+    if store.merge_agenda_due():
+        report["merge_agenda_due"] = len(store.avoid_codes()["codes"])
     report["human"] = "closed"
     report["reviewer_kind"] = decided_by
     # A reopened run adds to what it already reported rather than replacing it:
@@ -468,4 +486,6 @@ def close_review(store: Store, run_dir: Path) -> dict:
     out = {"status": "closed", "dissent_referenced": True, "decided": decided}
     if due:
         out["constraint_due"] = sorted(set(due))
+    if tripped:
+        out["restoration_due"] = tripped
     return out

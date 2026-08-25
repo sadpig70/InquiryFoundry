@@ -718,6 +718,95 @@ def test_disuse_clock_runs_per_domain(tmp_path):
     assert store.dormant_codes() == set()
 
 
+def _store_with(tmp_path, codes, rows):
+    root = tmp_path / ".if"
+    (root / "memory").mkdir(parents=True)
+    (root / "memory" / "avoid_codes.yaml").write_text(
+        yaml.safe_dump(codes), encoding="utf-8")
+    with (root / "memory" / "decisions.jsonl").open("w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r, ensure_ascii=False) + chr(10))
+    return Store(str(root))
+
+
+def _reject(run, code, domain="alpha"):
+    return {"run_id": run, "domain": domain, "decision": "reject", "reason": "r",
+            "pattern": code + " - x", "informational": False}
+
+
+def test_restoration_counts_the_whole_window_not_just_the_next_run(tmp_path):
+    """The first wording left three readings and I picked one by hand.
+
+    It said a code is restored if its family recurs "on the next run" after the
+    clause. The next run was clean and the one after had a single recurrence,
+    which is neither clearly a trigger nor clearly not one. Fable replaced it
+    with counting: every closed run after the clause is in the window, and
+    either two in one run or three scattered trips it.
+    """
+    codes = {"ratified": True, "codes": [
+        {"code": "SHAPE", "def": "d", "constraint_covered": "R-2",
+         "defect_kind": "shape"}]}
+    rows = [_reject("R-1", "SHAPE"), _reject("R-2", "SHAPE")]
+    # Three closed runs after the clause, one recurrence each in two of them.
+    rows += [{"run_id": "R-%d" % n, "domain": "alpha", "decision": "adopt",
+              "reason": "ok", "informational": False} for n in (3, 4, 5)]
+    rows.append(_reject("R-4", "SHAPE"))
+    st = _store_with(tmp_path, codes, rows)
+    r = st.restoration_status("alpha", "SHAPE")
+    assert r["clause_run"] == "R-2"
+    assert "R-3" in r["window"] and "R-5" in r["window"]
+    # One scattered recurrence is below both thresholds.
+    assert r["cumulative"] == 1 and r["max_in_one_run"] == 1
+    assert r["threshold_met"] is False and r["action"] is None
+
+
+def test_portfolio_defects_get_screening_not_delivery(tmp_path):
+    """Handing a generator a code for a defect it cannot see is inert.
+
+    DUP-RESUBMIT's duplication targets were adopted questions from earlier
+    runs, and the visibility jail keeps those out of reach, so restoring
+    delivery would enforce the rule with no causal path -- and then log as
+    another failed restoration when it changed nothing.
+    """
+    codes = {"ratified": True, "codes": [
+        {"code": "PORT", "def": "d", "constraint_covered": "R-1",
+         "defect_kind": "portfolio"}]}
+    rows = [_reject("R-1", "PORT"), _reject("R-2", "PORT"), _reject("R-2", "PORT")]
+    st = _store_with(tmp_path, codes, rows)
+    r = st.restoration_status("alpha", "PORT")
+    assert r["max_in_one_run"] == 2 and r["threshold_met"] is True
+    assert r["action"] == "raise_oa_screening"
+
+
+def test_reviewer_keeps_dormant_codes_once_ratified(tmp_path):
+    """Disuse prunes hardest where a clause worked, and only the reviewer's
+    list is left to prune once delivery has stopped.
+
+    A reviewer that cannot find the name writes NEW with a closest_code and
+    gives an existing code a second one -- the non-convergence the codes exist
+    to prevent, and it also zeroes the recurrence count on the very run that
+    should have raised the alarm. Gated on ratification because a reviewer does
+    not enact the scope of its own vocabulary.
+    """
+    codes = {"ratified": True, "codes": [
+        {"code": "OLD", "def": "quiet for a while"},
+        {"code": "NEW", "def": "still in use"}]}
+    rows = [_reject("R-1", "OLD")]
+    rows += [_reject("R-%d" % n, "NEW") for n in (2, 3, 4, 5)]
+    st = _store_with(tmp_path, codes, rows)
+    assert "OLD" in st.dormant_codes()
+    # Unratified: the old behaviour, dormant codes pruned from the packet.
+    assert not any(x.startswith("OLD") for x in st.reviewer_codes("alpha"))
+    doc = yaml.safe_load((Path(st.root) / "memory" / "avoid_codes.yaml").read_text(encoding="utf-8"))
+    doc["dormancy_display_only"] = {"ratified": True}
+    (Path(st.root) / "memory" / "avoid_codes.yaml").write_text(
+        yaml.safe_dump(doc), encoding="utf-8")
+    shown = st.reviewer_codes("alpha")
+    assert any(x.startswith("OLD") for x in shown), shown
+    # Still labelled, because recurring while dormant says a clause failed.
+    assert any("최근 관측 없음" in x for x in shown), shown
+
+
 def test_registry_entry_reports_the_clause_it_still_owes(tmp_path):
     """Entering the registry is what obliges someone to write a rule.
 

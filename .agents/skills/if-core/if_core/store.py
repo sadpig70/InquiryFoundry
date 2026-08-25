@@ -355,6 +355,115 @@ class Store:
                 dormant.add(code)
         return dormant
 
+    MERGE_AGENDA_AT = 13
+
+    def dormancy_is_display_only(self) -> bool:
+        """Has a person ratified demoting dormancy to a label?
+
+        Fable set the same condition on this that the taxonomy itself carried:
+        a reviewer redefining the scope of its own vocabulary does not enact
+        the redefinition. Until someone signs, nothing keys on it.
+        """
+        doc = load_yaml(self.root / "memory" / "avoid_codes.yaml")
+        if not isinstance(doc, dict):
+            return False
+        return bool((doc.get("dormancy_display_only") or {}).get("ratified"))
+
+    def reviewer_codes(self, domain: str) -> list[str]:
+        """The classification vocabulary a reviewer is shown.
+
+        Disuse was built to keep dead codes out of a generator's prompt. Once
+        delivery stopped, the only thing it still pruned was this list — and it
+        prunes hardest exactly where a clause has worked, because a defect that
+        stopped appearing is what disuse detects. RUN-20260823-live21 left
+        UNREACHABLE-FALSIFIER dormant for that reason, four runs after the
+        clause removed it.
+
+        A reviewer that cannot find the name writes `NEW` with a closest_code
+        and gives an existing code a second name, which is the non-convergence
+        the codes exist to stop. It also breaks the recurrence counting that
+        every restoration trigger depends on: the second name is a different
+        code, so the count resets to zero on the run that should have raised
+        the alarm.
+
+        Dormancy stays computed and is shown as a label, because a defect
+        recurring while dormant is precise evidence that a clause failed
+        quietly.
+        """
+        codes = self.avoid_codes()
+        if not codes["ratified"]:
+            return [e["pattern"] for e in self.avoid_registry(domain)]
+        if not self.dormancy_is_display_only():
+            return self.query_avoid_patterns(domain)["patterns"]
+        dormant = self.dormant_codes()
+        out = []
+        for c in codes["codes"]:
+            line = "%s — %s" % (c["code"], " ".join(str(c.get("def") or "").split()))
+            if c["code"] in dormant:
+                line += "  [최근 관측 없음 — 기존 코드로 그대로 쓸 것]"
+            out.append(line)
+        return out
+
+    RESTORE_IN_ONE_RUN = 2
+    RESTORE_CUMULATIVE = 3
+
+    def defect_kind(self, code: str) -> str | None:
+        """`shape` or `portfolio`, fixed when the code's clause is written.
+
+        A shape defect is one a generator can check against its own question.
+        A portfolio defect only exists in relation to work the generator is not
+        allowed to see — DUP-RESUBMIT is the case that forced the distinction:
+        its duplication targets were adopted questions from earlier runs, and
+        the visibility jail means handing the generator that code gives it
+        nothing to check against. Restoring delivery there enforces the rule
+        with no causal path, and a restoration that cannot work would log as
+        "restoration failed too".
+        """
+        for c in self.avoid_codes().get("codes") or []:
+            if c["code"] == code:
+                return c.get("defect_kind")
+        return None
+
+    def restoration_status(self, domain: str, code: str) -> dict:
+        """Does this code meet Fable's restoration threshold, counted not read.
+
+        The first wording said the code is restored if the family recurs "on
+        the next run" after its clause, which left three readings and I picked
+        one by hand. Counting it here is the point: the next decision should
+        not need another interpretation memo.
+
+        Window is every closed run of the domain after the clause's run, not
+        just the one following. Either two in a single run or three scattered
+        trips it; the cumulative counter never resets.
+        """
+        covered = self.constraint_covered().get(code)
+        if not covered:
+            return {"code": code, "clause_run": None, "eligible": False,
+                    "reason": "no clause written"}
+        order = self.domain_run_order(domain)
+        after = order[order.index(covered) + 1:] if covered in order else order
+        per_run: dict[str, int] = {}
+        for r in self._defect_rows(domain):
+            if r.get("run_id") in after and self.registry_key(r.get("pattern") or "") == code:
+                per_run[r["run_id"]] = per_run.get(r["run_id"], 0) + 1
+        burst = max(per_run.values(), default=0)
+        total = sum(per_run.values())
+        kind = self.defect_kind(code)
+        tripped = burst >= self.RESTORE_IN_ONE_RUN or total >= self.RESTORE_CUMULATIVE
+        return {
+            "code": code, "clause_run": covered, "window": after,
+            "per_run": per_run, "max_in_one_run": burst, "cumulative": total,
+            "defect_kind": kind, "threshold_met": tripped,
+            # A portfolio defect gets a screening review raised instead: the
+            # generator cannot see what it duplicates, so delivery is inert.
+            "action": (None if not tripped else
+                       "raise_oa_screening" if kind == "portfolio" else "restore_delivery"),
+        }
+
+    def merge_agenda_due(self) -> bool:
+        """Vocabulary compaction is now a person's job alone, so say when."""
+        return len(self.avoid_codes()["codes"]) >= self.MERGE_AGENDA_AT
+
     def constraint_covered(self) -> dict[str, str]:
         """Codes a `constraints` clause has been written for, and which run."""
         doc = load_yaml(self.root / "memory" / "avoid_codes.yaml")
