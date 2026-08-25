@@ -11,8 +11,12 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub const WAIT_MAX_S: u64 = 3600;
-pub const WAIT_DEFAULT_S: u64 = 3600;
+// 50 minutes, deliberately under the clients' 60-minute tool timeout:
+// the server must answer well before the client gives up, or the reply
+// races the abort with zero margin. Both ceiling and default, so even an
+// explicit timeout_s: 3600 gets clamped back inside the margin.
+pub const WAIT_MAX_S: u64 = 3000;
+pub const WAIT_DEFAULT_S: u64 = 3000;
 
 pub struct Ctx {
     pub bus: Arc<Bus>,
@@ -106,7 +110,7 @@ fn tool_schemas() -> Value {
                 "properties": {
                     "lwar_id": {"type": "string", "description": "e.g. LWAR1"},
                     "timeout_s": {"type": "integer", "minimum": 1, "maximum": WAIT_MAX_S,
-                                   "description": "server-side wait ceiling; default and maximum 3600 (60min) - matches the old Python watcher duty cycle so an idle LWAR spends about one turn per hour"}
+                                   "description": "server-side wait ceiling; default and maximum 3000 (50min), held 10 minutes under the clients: 60-minute tool timeout so the reply never races the abort"}
                 },
                 "required": ["lwar_id"]
             }
@@ -277,12 +281,15 @@ mod tests {
 
     #[test]
     fn schema_advertises_the_hour_ceiling() {
-        // The ceiling exists to match the old Python watcher's 50-minute duty
-        // cycle: an idle LWAR should spend about one turn per hour, not six.
-        assert_eq!(WAIT_MAX_S, 3600);
+        // 50 minutes of wait against a 60-minute client tool timeout: one turn
+        // per idle hour, with ten minutes of margin so the reply never races the abort.
+        const CLIENT_TOOL_TIMEOUT_S: u64 = 3600; // operator-configured, per runtime
+        assert_eq!(WAIT_MAX_S, 3000);
         assert_eq!(WAIT_DEFAULT_S, WAIT_MAX_S);
+        // The whole point: the server always answers before the client aborts.
+        assert!(WAIT_MAX_S + 300 <= CLIENT_TOOL_TIMEOUT_S);
         let schema = tool_schemas();
-        assert_eq!(schema[0]["inputSchema"]["properties"]["timeout_s"]["maximum"], 3600);
+        assert_eq!(schema[0]["inputSchema"]["properties"]["timeout_s"]["maximum"], 3000);
     }
 
     #[test]
