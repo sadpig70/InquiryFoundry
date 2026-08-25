@@ -2405,6 +2405,22 @@ Grok 은 §7.40 에서 완주했으나, `watcher_wait` 240s timeout 후 세션�
 DESIGN 이 명기한 대로 turn 소모는 이 구조가 해결하지 않는 문제다. 재개는 그 세션에
 `watcher_wait` 루프를 계속하라고 지시하는 것뿐이다(운영자 몫).
 
+### 정지 (2026-08-25, 운영자 지시 — 서버는 유지)
+
+4대 전부에 `control:shutdown` 발행. 결과가 초인종 모델의 성질을 그대로 보여줬다:
+
+- **LWAR3 (파킹 중이었음)** — 초인종으로 깨어나 claim·정지. **MCP 경로로 shutdown 이
+  소비된 첫 관측**이다.
+- **LWAR5/6/7 (파킹 풀림)** — shutdown 이 control 큐에 **미수령으로 남아 있다.**
+  파킹이 없으면 즉시 전달도 없다. 무해하다 — 세션이 살아 있으면 다음 `watcher_wait`
+  때 받고 멈추고, 닫혔으면 큐에 남는다.
+
+`watching: []` — 사실상 전원 정지. **pao-server 는 계속 떠 있다** (운영자 지시).
+
+**재가동 시 주의**: 같은 identity 로 재개하는 세션은 첫 기상에서 이 잔여 shutdown 을
+받아 **즉시 다시 멈춘다.** 재가동 전에 해당 슬롯의 잔여 shutdown 을
+`recover --expire-controls` 로 지우고 시작할 것. 새 세션 신규 등록이면 새 슬롯이라 무관.
+
 ### 은퇴 3건 — 런북 그대로
 
 LWAR1/2/4: `collect --archive`(outgoing 47/46/10건) → LWAR1 은 미수령 검증 ping 1건을
