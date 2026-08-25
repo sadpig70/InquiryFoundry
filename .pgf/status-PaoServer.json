@@ -1,0 +1,33 @@
+{
+ "project": "PaoServer",
+ "version": "0.1.0",
+ "updated_at": "2026-08-25",
+ "nodes": {
+  "Scaffold": "done",
+  "Clock": "done",
+  "BusReader": "done",
+  "RegistryView": "done",
+  "MailboxScan": "done",
+  "HeartbeatWriter": "done",
+  "WaiterHub": "done",
+  "Poller": "done",
+  "Http": "done",
+  "Mcp": "done",
+  "WatcherWait": "done",
+  "WatcherStatus": "done",
+  "UnitTests": "done",
+  "ProtocolTest": "done",
+  "Verify": "done",
+  "Docs": "done"
+ },
+ "summary": {
+  "done": 16,
+  "total": 16
+ },
+ "verify": {
+  "verdict": "passed",
+  "acceptance": "unit 14/14 + protocol 26/26 + real-bus smoke",
+  "quality": "clippy clean, deps=serde+serde_json only, release 444KB",
+  "architecture": "src modules == Gantree nodes 1:1 (clock/bus/poll/http/mcp)"
+ }
+}

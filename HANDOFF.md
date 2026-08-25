@@ -434,7 +434,8 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 | 7.34 `objective` 회전 | 현행 | 고정 배분 결함 제거. 분해는 DUP 이 다시 나와야 가능 |
 | 7.35 기각 0 2연속 (live20) | 현행 | 검증 4 가 9→8. 다음 런이 3런째 |
 | 7.36 분해 결과 (live21) | 현행 | 두 가설 다 짐. **은퇴가 리뷰어 어휘를 깎는 새 결함** |
-| 7.37 휴면 강등 · 발동 조건 (Fable 결정) | 현행 | **(A) 사람 비준 대기.** (B) 는 발효 |
+| 7.37 휴면 강등 · 발동 조건 (Fable 결정) | 현행 | (A) **비준 완료**(2026-08-25 human), (B) 발효 |
+| 7.38 pao-server (MCP watcher) | 현행 | 구현·검증 완료. LWAR 등록과 SKILL 갱신이 남음 |
 
 **규칙 하나.** 어떤 절의 결론이 뒤집히면 **그 절 안에 정정을 쓰고 이 표를 갱신한다.**
 지우지 않는다 — 틀린 판단이 어떻게 나왔는지가 §7 의 값어치다.
@@ -2230,6 +2231,41 @@ Fable 이 선택지 1 을 취하되 한 걸음 더 갔다: 휴면을 목록에�
   이 경계 사례로 지목됐다 — 원 논문 지식이라는 외부 정보를 요구하는 점에서 걸쳐 있다.
 - **이해 충돌은 완화됐을 뿐 제거되지 않았다.** *"사람 비준이 형식적 통과가 되면 완화
   장치 전부가 장식이 된다 — 비준자가 이 결정문을 실제로 읽는 것에 의존한다."*
+
+## 7.38 pao-server — watcher 를 중앙 MCP 서버로 (2026-08-25, PGF full-cycle)
+
+운영자 지시로 설계·검토·구현·테스트·검증을 한 번에 진행했다.
+권위 설계는 `.pgf/DESIGN-PaoServer.md`(결정 S1–S9), 소스는 `pao-server/`(Rust).
+
+**무엇인가** — 벤더별 상주 watcher 를 MCP Streamable HTTP 서버 하나로 대체한다.
+5초마다 registry 의 on/draining 슬롯의 `incoming/`·`control/` 을 훑고, 블로킹 tool
+`watcher_wait(lwar_id, timeout_s)` 로 파킹된 LWAR 을 도착 즉시 깨운다.
+
+**세 결정** (2026-08-25 검토에서 운영자 승인):
+
+- **초인종, 집배원 아님(S1)** — 서버는 버스 파일을 옮기지도 만들지도 않는다.
+  claim/lease/submit 은 기존 `lwar.py`. 서버 사망 = 알림 유실뿐, claim 좌초 없음(§7.6).
+- **blocking long-poll(S3)** — SSE push 안 씀. 벤더 4사 MCP 클라이언트 호환의 최소공배수.
+- **heartbeat 인수(S2)** — 대기 중 LWAR 의 heartbeat 를 서버가 갱신(identity 보존,
+  `last_seen`/`status` 만). **"정상 정지와 진짜 사망이 똑같이 보인다"(§7.24) 가 처음으로
+  구조적으로 풀린다** — 연결이 곧 생존 신호다.
+
+**구현 선택** — 의존성 serde+serde_json 뿐. HTTP 는 std::net 수제(thread-per-connection,
+chunked 수신 포함), MCP 는 stateless(세션 없음, POST 당 JSON-RPC 1건). rmcp/tokio 를
+안 쓴 이유: API 지식 리스크 제거. 127.0.0.1 은 하드코딩 — 인자로도 못 바꾼다.
+
+**검증** — 단위 14건 + 실 HTTP 프로토콜 26건(스크래치 버스에 실바이너리:
+initialize 에코, 202 notification, chunked, 대기 중 도착 <8s, heartbeat identity 보존,
+mailbox 무접촉, batch 거부) + 실 `.pao` 스모크(watchable 4대 정확, 정지 중 heartbeat
+무변경 확인). clippy clean. 릴리스 444KB.
+
+**turn 소모는 해결하지 않는다.** LWAR 은 깨어날 때마다 여전히 turn 을 쓴다.
+가치는 watcher 사망·stale 오판·재시작 누락의 제거다.
+
+**남은 것(서버 밖)** — LWAR 런타임들의 MCP 설정에
+`http://127.0.0.1:8811/mcp` 등록(운영자 몫), `pao-lwar` SKILL 의 host-notify probe /
+exit-notify 분기 문서 갱신, `oa.py status` 가 `pao_server.json` 을 읽게 하는 통합.
+서버 생사는 그 파일의 `last_seen` (5초 갱신) 으로 판정한다.
 
 ---
 
