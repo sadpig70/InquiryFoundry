@@ -436,7 +436,8 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 | 7.36 분해 결과 (live21) | 현행 | 두 가설 다 짐. **은퇴가 리뷰어 어휘를 깎는 새 결함** |
 | 7.37 휴면 강등 · 발동 조건 (Fable 결정) | 현행 | (A) **비준 완료**(2026-08-25 human), (B) 발효 |
 | 7.38 pao-server (MCP watcher) | 현행 | 구현·검증 완료 |
-| 7.39 pao-server 통합 | 현행 | 실버스 왕복 4.7s 통과. **실 LWAR 세션 완주는 미검증** |
+| 7.39 pao-server 통합 | 현행 | 실버스 왕복 4.7s 통과 |
+| 7.40 실 LWAR 완주 (Grok/LWAR5) | 현행 | **§7.39 미검증 닫힘.** 5단계/6단계 구분 주의 |
 
 **규칙 하나.** 어떤 절의 결론이 뒤집히면 **그 절 안에 정정을 쓰고 이 표를 갱신한다.**
 지우지 않는다 — 틀린 판단이 어떻게 나왔는지가 §7 의 값어치다.
@@ -2321,6 +2322,47 @@ curl http://127.0.0.1:8811/health          # 또는 oa.py status 의 pao_server 
 
 **미검증으로 남은 것** — 실제 벤더 LWAR 세션이 MCP 경로로 완주하는 것(등록은 됐으나
 런타임들이 정지 중). 다음 재가동 때 각 LWAR 이 새 SKILL 절차를 타는지 관찰할 것.
+
+## 7.40 첫 실 LWAR 이 MCP 경로를 완주했다 — Grok/LWAR5 (2026-08-25)
+
+운영자가 Grok 새 세션에 `/lwar-register` 를 지시했고, §7.39 의 미검증 항목이 닫혔다.
+
+### 관찰된 전 과정 (시간순)
+
+| 단계 | 관찰 |
+|---|---|
+| 등록 요청 | `lwar-reg-1d0a…` (xai / Grok 4.6), `requested_lwar_id: null` |
+| OA reconcile 승인 | **LWAR5** 배정 (gen 2), registry v40 |
+| SKILL 5단계 | 상주 응답 watcher 가 돌기 시작 (`watcher.pid.json`, heartbeat 갱신) |
+| **여기서 오판할 뻔했다** | 파킹이 안 보여서 "MCP 도구가 안 보이는구나" 로 읽을 뻔 — 실제로는 **아직 5단계**였다. 5단계의 상주 watcher 는 50분 상한이라, ping 을 보내 소진시켜 6단계로 진행시켰다 |
+| ping #1 | 상주 watcher 가 소비 (구 경로 정상 동작 확인) |
+| **SKILL 6단계** | 세션이 `pao-watcher` 도구를 발견, **`watcher_wait("LWAR5")` 파킹** — `pao_server.json` 의 `watching: ["LWAR5"]` |
+| ping #2 (검증용) | **16초** 만에 기상→claim→처리, control 큐 0 |
+| **재파킹** | `watching: ["LWAR5"]` 복귀. heartbeat 는 서버가 4s 주기로 갱신 |
+
+**갱신된 SKILL 을 실 벤더 세션이 그대로 따랐다** — probe 생략, `watcher_wait` 루프,
+기존 스크립트로 claim. 이로써 검증 사다리가 완성됐다: 단위 14 → 프로토콜 26 →
+실버스 왕복(가짜 클라이언트) → **실 LWAR 세션 완주**.
+
+### 절차 기록 — 5단계와 6단계를 혼동하지 말 것
+
+신규 등록 직후의 watcher 프로세스는 **등록 응답 상주 watcher**(5단계, 승인 대기용)다.
+MCP 파킹은 6단계이고, 5단계 watcher 가 이벤트나 50분 상한으로 끝나야 도달한다.
+빨리 진행시키려면 ping 하나면 된다. `watcher.pid.json` 존재 = 번들 watcher,
+`pao_server.json` 의 `watching` 등재 = MCP 파킹 — 이 둘로 구분한다.
+
+### 구 LWAR3 은퇴
+
+같은 런타임이 LWAR5 로 재등록됐으므로 구 슬롯을 은퇴 런북대로 정리했다:
+`collect --archive` (outgoing 46건 — **런북이 경고한 바로 그 함정**) →
+`recover --retire-stale` (instance/generation/expected-last-seen 3중 가드) →
+`reconcile`. registry v41. 현재 로스터: LWAR1·2·4(정지, 재가동 대기) + **LWAR5(활성)**.
+
+### 다음 재가동에 적용되는 것
+
+LWAR1·2·4 도 새 세션으로 열리면 같은 흐름이다 — 신규 등록(새 슬롯 배정) 또는
+identity 핸드오프로 RESUME. 등록 요청이 오면 OA reconcile 이 필요하다.
+구 슬롯이 남으면 이번과 같이 은퇴시킨다.
 
 ---
 
