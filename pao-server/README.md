@@ -33,7 +33,7 @@ URL: http://127.0.0.1:8811/mcp
 ## LWAR 의 사용 계약
 
 ```
-1. watcher_wait(lwar_id="LWAR1", timeout_s=240) 호출 → 블로킹
+1. watcher_wait(lwar_id="LWAR1", timeout_s=3000) 호출 → 블로킹 (생략해도 동일 — 서버 기본값 3000)
 2. {arrived: true, tasks: N, controls: M} 반환 → 기존 lwar.py 로 claim·처리·submit
    {arrived: false} 반환 → 다시 watcher_wait 호출
 3. 반복
@@ -45,7 +45,7 @@ URL: http://127.0.0.1:8811/mcp
 
 | tool | 동작 |
 |---|---|
-| `watcher_wait(lwar_id, timeout_s?)` | 도착 즉시 또는 timeout(상한 600s, 기본 240s)에 반환 |
+| `watcher_wait(lwar_id, timeout_s?)` | 도착 즉시 또는 timeout(상한·기본 3000s=50분 — 클라이언트 60분 tool 타임아웃 아래 10분 마진)에 반환 |
 | `watcher_status()` | 서버 생사·대기 중 목록·감시 대상 목록 |
 
 ## 테스트

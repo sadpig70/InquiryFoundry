@@ -147,7 +147,7 @@ Run this decision flow at the start of a session, before any other action:
      `identity_file`; keep it.
 6. After identity is known, start the watcher chosen in 3a:
      mcp-notify (preferred whenever the `pao-watcher` MCP tools exist):
-       loop { `watcher_wait(lwar_id, timeout_s=240)`;
+       loop { `watcher_wait(lwar_id, timeout_s=3000)`;   # 50min; omitting timeout_s gives the same server default
               on arrived → run `python -u "<PAO_SKILL>/scripts/adp_exit_notify.py" --identity-file <abs>`
               once — mail is present, so it claims and returns immediately; handle the
               event exactly as below; on `{arrived: false}` just call `watcher_wait` again }.
