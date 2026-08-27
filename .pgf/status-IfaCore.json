@@ -1,0 +1,32 @@
+{
+ "project": "IfaCore",
+ "version": "0.1.0",
+ "updated_at": "2026-08-27",
+ "nodes": {
+  "Store": "done",
+  "Schema": "done",
+  "Roles": "done",
+  "Bus": "done",
+  "Select": "done",
+  "Predict": "done",
+  "Rebut": "done",
+  "Adjudicate": "done",
+  "Compose": "done",
+  "Review": "done",
+  "Report": "done",
+  "UnitTests": "done",
+  "Pilot": "done",
+  "Verify": "done",
+  "Docs": "done"
+ },
+ "summary": {
+  "done": 15,
+  "total": 15
+ },
+ "verify": {
+  "verdict": "passed",
+  "acceptance": "unit 8/8 + live pilot 6q x 3vendors, 9/9 succeeded, 0 dropped, .if untouched",
+  "quality": "review reasons substantive (hidden-premise, evidence-misattribution catches)",
+  "architecture": "ifa_core modules == Gantree nodes 1:1"
+ }
+}

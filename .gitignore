@@ -18,6 +18,7 @@ venv/
 *.key
 
 # Local scratch / operator IDs / probe leftovers
+.ifa/
 _workspace/
 _legacy/
 .codex/
