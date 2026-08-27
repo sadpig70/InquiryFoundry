@@ -734,30 +734,55 @@ def _reject(run, code, domain="alpha"):
             "pattern": code + " - x", "informational": False}
 
 
-def test_restoration_counts_the_whole_window_not_just_the_next_run(tmp_path):
-    """The first wording left three readings and I picked one by hand.
+def test_restoration_window_includes_the_clauses_own_run(tmp_path):
+    """A run is in the window iff its brief carried the clause -- debut included.
 
-    It said a code is restored if its family recurs "on the next run" after the
-    clause. The next run was clean and the one after had a single recurrence,
-    which is neither clearly a trigger nor clearly not one. Fable replaced it
-    with counting: every closed run after the clause is in the window, and
-    either two in one run or three scattered trips it.
+    The first wording said "after the clause's run" and was read two ways:
+    Fable meant "once the clause is in the brief", the implementation started
+    counting the next run, and live23 fell in the gap -- two recurrences in
+    the very run that introduced the clause, invisible to the exclusive
+    reading. Her re-confirmation fixes the boundary case she specified: if the
+    clause first rides run R's brief and R records k rejects of that code,
+    R's burst is k.
     """
     codes = {"ratified": True, "codes": [
         {"code": "SHAPE", "def": "d", "constraint_covered": "R-2",
          "defect_kind": "shape"}]}
-    rows = [_reject("R-1", "SHAPE"), _reject("R-2", "SHAPE")]
-    # Three closed runs after the clause, one recurrence each in two of them.
+    # R-1 predates the clause: excluded. R-2 debuts it with two rejects: burst
+    # 2 in-window. R-3..R-5 close after; one scattered recurrence in R-4.
+    rows = [_reject("R-1", "SHAPE"), _reject("R-2", "SHAPE"), _reject("R-2", "SHAPE")]
     rows += [{"run_id": "R-%d" % n, "domain": "alpha", "decision": "adopt",
               "reason": "ok", "informational": False} for n in (3, 4, 5)]
     rows.append(_reject("R-4", "SHAPE"))
     st = _store_with(tmp_path, codes, rows)
     r = st.restoration_status("alpha", "SHAPE")
     assert r["clause_run"] == "R-2"
-    assert "R-3" in r["window"] and "R-5" in r["window"]
-    # One scattered recurrence is below both thresholds.
-    assert r["cumulative"] == 1 and r["max_in_one_run"] == 1
-    assert r["threshold_met"] is False and r["action"] is None
+    assert "R-2" in r["window"] and "R-1" not in r["window"]
+    assert r["max_in_one_run"] == 2 and r["cumulative"] == 3
+    assert r["threshold_met"] is True and r["action"] == "restore_delivery"
+
+
+def test_targeted_restoration_rides_the_withheld_allocation():
+    """A restored code reaches generators alone; the withhold holds for the rest.
+
+    Restoration is the pre-registered response when a registered defect meets
+    its threshold despite a clause. It is per-code by design -- re-delivering
+    the whole taxonomy would undo the ledger decision to answer one defect.
+    """
+    lwars = [
+        {"lwar_id": "LWAR1", "vendor_family": "openai"},
+        {"lwar_id": "LWAR2", "vendor_family": "google"},
+        {"lwar_id": "LWAR3", "vendor_family": "xai"},
+    ]
+    brief = {"mode": "normal", "evidence_hints": {"papers": ["p/a"]}}
+    avoid = {"patterns": ["PRED — x", "DUP — y", "OTHER — z"],
+             "recent_reasons": ["a reason"],
+             "restored_patterns": ["PRED — x"]}
+    alloc = build_allocation(brief, lwars, avoid)
+    for lid, slot in alloc.items():
+        assert slot["avoid_codes_withheld"] is True, lid
+        assert slot["avoid_registry"] == ["PRED — x"], lid
+        assert slot["avoid_patterns"] == ["a reason"], lid
 
 
 def test_portfolio_defects_get_screening_not_delivery(tmp_path):

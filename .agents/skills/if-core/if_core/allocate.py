@@ -89,9 +89,10 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
     kinds = list(brief.get("evidence_hints") or {}) or list(EVIDENCE_KINDS)
     if isinstance(avoid, dict):
         patterns = list(avoid.get("patterns") or [])
+        restored = list(avoid.get("restored_patterns") or [])
         avoid = list(avoid.get("recent_reasons") or [])
     else:
-        patterns, avoid = [], list(avoid or [])
+        patterns, avoid, restored = [], list(avoid or []), []
     # Withheld by default since Fable's second taxonomy decision (2026-08-23).
     # Five runs measured generator-side delivery and found no contribution:
     # RUN-20260822-live16 produced three questions carrying exactly the defect
@@ -111,7 +112,10 @@ def build_allocation(brief: dict, lwars: list[dict], avoid=None) -> dict:
     # `ratified` would not (see 7.25).
     withheld = bool(brief.get("withhold_avoid_codes", True))
     if withheld:
-        patterns = []
+        # Targeted restoration survives the withhold: a code that met its
+        # threshold despite a clause is re-delivered alone, everything else
+        # stays a reviewer's ledger.
+        patterns = restored
     offset = run_operator_offset(brief)
     obj_offset = run_objective_offset(brief)
     table, used = {}, set()

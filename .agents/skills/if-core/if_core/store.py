@@ -432,16 +432,29 @@ class Store:
         one by hand. Counting it here is the point: the next decision should
         not need another interpretation memo.
 
-        Window is every closed run of the domain after the clause's run, not
-        just the one following. Either two in a single run or three scattered
-        trips it; the cumulative counter never resets.
+        The window is every closed run whose brief carried the clause -- the
+        run that first carried it INCLUDED. Fable re-confirmed this after
+        "after the clause's run" was read two ways: she meant "once the clause
+        is in the brief", the implementation read "starting the next run", and
+        live23 fell exactly in the gap -- two recurrences in the clause's own
+        run, counted by one reading and invisible to the other. Her grounds:
+        the window measures recurrence while the clause is in force, and force
+        begins when a generator receives it; the debut run is the cleanest
+        test, with no adaptation smoothing it. `constraint_covered` records
+        the run whose brief first carried the clause (not the run that entered
+        the code), so slicing from it is faithful to brief membership as long
+        as a clause, once shipped, stays in every later brief -- which the
+        brief lineage does (each brief extends the last).
+
+        Either two in a single run or three scattered trips it; the cumulative
+        counter never resets.
         """
         covered = self.constraint_covered().get(code)
         if not covered:
             return {"code": code, "clause_run": None, "eligible": False,
                     "reason": "no clause written"}
         order = self.domain_run_order(domain)
-        after = order[order.index(covered) + 1:] if covered in order else order
+        after = order[order.index(covered):] if covered in order else order
         per_run: dict[str, int] = {}
         for r in self._defect_rows(domain):
             if r.get("run_id") in after and self.registry_key(r.get("pattern") or "") == code:
@@ -459,6 +472,20 @@ class Store:
             "action": (None if not tripped else
                        "raise_oa_screening" if kind == "portfolio" else "restore_delivery"),
         }
+
+    def restored_codes(self) -> set[str]:
+        """Codes whose generator delivery was restored by a counted trigger.
+
+        Targeted restoration is the pre-registered response when a registered
+        defect meets the threshold despite its clause (Fable, 7.37/B2). It is
+        per-code: the withheld default stays for everything else, and the
+        restored code rides `avoid_registry` alone.
+        """
+        doc = load_yaml(self.root / "memory" / "avoid_codes.yaml")
+        if not isinstance(doc, dict):
+            return set()
+        return {c["code"] for c in doc.get("codes") or []
+                if c.get("delivery_restored")}
 
     def merge_agenda_due(self) -> bool:
         """Vocabulary compaction is now a person's job alone, so say when."""
@@ -541,7 +568,14 @@ class Store:
                         for c in codes["codes"] if c["code"] not in dormant]
         else:
             patterns = [e["pattern"] for e in self.avoid_registry(domain)]
-        return {"patterns": patterns, "recent_reasons": [r["reason"] for r in recent]}
+        restored = self.restored_codes()
+        restored_patterns = [
+            "%s — %s" % (c["code"], " ".join(str(c.get("def") or "").split()))
+            for c in codes["codes"] if c["code"] in restored
+        ] if codes["ratified"] else []
+        return {"patterns": patterns,
+                "recent_reasons": [r["reason"] for r in recent],
+                "restored_patterns": restored_patterns}
 
     def append_dissent(self, rec: dict) -> None:
         append_jsonl(self.dissent_log, rec)
