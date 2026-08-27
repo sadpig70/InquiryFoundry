@@ -72,7 +72,7 @@ def main() -> int:
     elif args.cmd == "close":
         _emit(cycle.close_run(store, args.run))
     elif args.cmd == "report":
-        rows = cycle.priorities(store, args.run)
+        rows = cycle.priorities(store, None if args.run == "ALL" else args.run)
         lines = ["# 실험 우선순위 — 등록된 예측의 벤더 간 불일치", "",
                  "| question_id | 등록 예측 | 방향 | 불일치 |", "|---|---|---|---|"]
         for r in rows:

@@ -40,9 +40,13 @@ def has_quant_reject_if(q: dict) -> bool:
 
 
 def select_batch(store: IfaStore, n: int = 6) -> list[dict]:
-    """Quantitative reject_if first, domains interleaved, provenance logged."""
+    """Quantitative reject_if first, domains interleaved, already-predicted
+    questions excluded -- successive runs walk the portfolio instead of
+    re-predicting the same head of the list."""
     adopted = store.read_adopted()
-    quant = [q for q in adopted if has_quant_reject_if(q)]
+    done = {a["question_id"] for a in store.load_answers()}
+    quant = [q for q in adopted
+             if has_quant_reject_if(q) and q["question_id"] not in done]
     by_domain: dict[str, list] = {}
     for q in quant:
         by_domain.setdefault((q.get("lineage") or {}).get("domain") or "?", []).append(q)
@@ -280,7 +284,7 @@ def disagreement(preds: list[dict]) -> str:
     return "agree" if len(set(dirs)) == 1 else "split"
 
 
-def priorities(store: IfaStore, run_id: str) -> list[dict]:
+def priorities(store: IfaStore, run_id: str | None) -> list[dict]:
     """Per-question disagreement over REGISTERED predictions. diverge first --
     where well-grounded models split, a real experiment buys the most."""
     rows: dict[str, list[dict]] = {}
