@@ -216,6 +216,31 @@ def test_priorities_rank_split_first(tmp_path):
     assert rows[0]["disagreement"] == "split"
 
 
+def test_second_opinion_targets_exactly_the_singles(tmp_path):
+    """The mode exists to fill the holes the first walk left: questions with
+    one registered prediction get a second opinion; fully-covered and
+    never-predicted questions are both out of scope."""
+    store, run_id, report = run_full(tmp_path)
+    answers = store.load_answers(run_id)
+    # Register one prediction for question 0, all three for question 1.
+    q0 = answers[0]["question_id"]
+    outbox = []
+    kept_one = False
+    for a in answers:
+        if a["question_id"] == q0:
+            d = "register" if not kept_one else "discard"
+            kept_one = True
+        else:
+            d = "register"
+        outbox.append({"answer_id": a["answer_id"], "decision": d, "reason": "r"})
+    cycle.fold_review(store, run_id, outbox, "Stub")
+    cycle.ratify(store, run_id, "Stub", delegated=True)
+    cycle.close_run(store, run_id)
+    so = cycle.select_batch(store, 99, "second-opinion")
+    assert [q["question_id"] for q in so] == [q0]
+    assert cycle.select_batch(store, 99, "fresh") == []
+
+
 def test_schema_rejects_thin_and_novel(tmp_path):
     with pytest.raises(SchemaError):
         validate_predict_outbox([dict(good_prediction("Q-1"), rationale="short")], {"Q-1"})

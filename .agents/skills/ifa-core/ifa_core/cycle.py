@@ -39,14 +39,28 @@ def has_quant_reject_if(q: dict) -> bool:
     return any(ch.isdigit() for ch in rj) and len(rj) > 20
 
 
-def select_batch(store: IfaStore, n: int = 6) -> list[dict]:
-    """Quantitative reject_if first, domains interleaved, already-predicted
-    questions excluded -- successive runs walk the portfolio instead of
-    re-predicting the same head of the list."""
+def select_batch(store: IfaStore, n: int = 6, mode: str = "fresh") -> list[dict]:
+    """fresh: questions never predicted. second-opinion: questions holding
+    exactly one REGISTERED prediction -- the 71 singles the first walk left
+    when the roster thinned to one strong vendor. A second registered opinion
+    is what turns them from unusable into agree/split, and a candidate
+    vendor's registration rate on this pass doubles as its qualification
+    score: the blind review that flunked 68 straight predictions is the
+    hardest honest gate this project owns."""
     adopted = store.read_adopted()
-    done = {a["question_id"] for a in store.load_answers()}
-    quant = [q for q in adopted
-             if has_quant_reject_if(q) and q["question_id"] not in done]
+    answers = store.load_answers()
+    if mode == "second-opinion":
+        reg_count: dict[str, int] = {}
+        for a in answers:
+            if a["status"] == "REGISTERED":
+                reg_count[a["question_id"]] = reg_count.get(a["question_id"], 0) + 1
+        singles = {qid for qid, c in reg_count.items() if c == 1}
+        quant = [q for q in adopted
+                 if q["question_id"] in singles and has_quant_reject_if(q)]
+    else:
+        done = {a["question_id"] for a in answers}
+        quant = [q for q in adopted
+                 if has_quant_reject_if(q) and q["question_id"] not in done]
     by_domain: dict[str, list] = {}
     for q in quant:
         by_domain.setdefault((q.get("lineage") or {}).get("domain") or "?", []).append(q)
@@ -282,6 +296,32 @@ def disagreement(preds: list[dict]) -> str:
     it now would rank noise."""
     dirs = [p.get("direction") for p in preds]
     return "agree" if len(set(dirs)) == 1 else "split"
+
+
+def vendor_scores(store: IfaStore) -> dict[str, dict]:
+    """Per-author registration rate, read off the assignment tables.
+
+    The reviewer never sees authorship, so this rate is a blinded quality
+    measurement -- the qualification score for candidate vendors and the
+    replacement evidence for incumbents.
+    """
+    import yaml as _yaml
+    out: dict[str, dict] = {}
+    for a in store.load_answers():
+        asg_p = Path(store.root) / "runs" / a["run_id"] / "assignment.yaml"
+        if not asg_p.is_file():
+            continue
+        asg = _yaml.safe_load(asg_p.read_text(encoding="utf-8"))
+        author = (asg.get("anon_authors") or {}).get(a.get("anon_id"))
+        if not author:
+            continue
+        row = out.setdefault(author, {"registered": 0, "discarded": 0, "other": 0})
+        key = {"REGISTERED": "registered", "DISCARDED": "discarded"}.get(a["status"], "other")
+        row[key] += 1
+    for row in out.values():
+        judged = row["registered"] + row["discarded"]
+        row["rate"] = round(row["registered"] / judged, 3) if judged else None
+    return out
 
 
 def priorities(store: IfaStore, run_id: str | None) -> list[dict]:

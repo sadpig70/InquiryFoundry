@@ -29,13 +29,15 @@ def _emit(obj) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("select", "run", "review-run", "ratify", "close", "report"):
+    for name in ("select", "run", "review-run", "ratify", "close", "report", "vendors"):
         p = sub.add_parser(name)
         p.add_argument("--run", required=True)
         p.add_argument("--ifa-root", default=".ifa")
         p.add_argument("--if-root", default=".if")
         if name == "select":
             p.add_argument("--n", type=int, default=6)
+            p.add_argument("--mode", default="fresh",
+                           choices=("fresh", "second-opinion"))
         if name == "run":
             p.add_argument("--lwars", required=True)
         if name == "review-run":
@@ -48,7 +50,7 @@ def main() -> int:
     store = IfaStore(args.ifa_root, args.if_root)
 
     if args.cmd == "select":
-        batch = cycle.select_batch(store, args.n)
+        batch = cycle.select_batch(store, args.n, getattr(args, "mode", "fresh"))
         run_dir = store.run_dir(args.run)
         atomic_write_yaml(run_dir / "batch.yaml", batch)
         _emit({"selected": [q["question_id"] for q in batch],
@@ -71,6 +73,8 @@ def main() -> int:
         _emit(cycle.ratify(store, args.run, args.reviewer, args.delegated))
     elif args.cmd == "close":
         _emit(cycle.close_run(store, args.run))
+    elif args.cmd == "vendors":
+        _emit(cycle.vendor_scores(store))
     elif args.cmd == "report":
         rows = cycle.priorities(store, None if args.run == "ALL" else args.run)
         lines = ["# 실험 우선순위 — 등록된 예측의 벤더 간 불일치", "",
