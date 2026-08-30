@@ -51,10 +51,19 @@ def select_batch(store: IfaStore, n: int = 6, mode: str = "fresh") -> list[dict]
     answers = store.load_answers()
     if mode == "second-opinion":
         reg_count: dict[str, int] = {}
+        pending: set[str] = set()
         for a in answers:
             if a["status"] == "REGISTERED":
                 reg_count[a["question_id"]] = reg_count.get(a["question_id"], 0) + 1
-        singles = {qid for qid, c in reg_count.items() if c == 1}
+            elif a["status"] in ("DRAFT", "SCORED"):
+                # A prediction is already in flight and unreviewed. Without
+                # this exclusion the decoupled phases loop: reviews run after
+                # all rounds, so REGISTERED never moves during the walk and
+                # every batch re-selects the same head of the singles list --
+                # seven batches predicted the same eight questions before this
+                # line existed.
+                pending.add(a["question_id"])
+        singles = {qid for qid, c in reg_count.items() if c == 1} - pending
         quant = [q for q in adopted
                  if q["question_id"] in singles and has_quant_reject_if(q)]
     else:
@@ -334,8 +343,11 @@ def priorities(store: IfaStore, run_id: str | None) -> list[dict]:
     rank = {"split": 0, "agree": 1}
     out = []
     for qid, preds in rows.items():
+        dirs = [p.get("direction") for p in preds]
+        minority = min(dirs.count("reject"), dirs.count("no-reject"))
         out.append({"question_id": qid, "n_registered": len(preds),
-                    "directions": [p.get("direction") for p in preds],
+                    "directions": dirs,
+                    "minority_frac": round(minority / len(dirs), 2) if len(dirs) > 1 else None,
                     "disagreement": disagreement(preds) if len(preds) > 1 else "single"})
     out.sort(key=lambda r: (rank.get(r["disagreement"], 3), -r["n_registered"]))
     return out

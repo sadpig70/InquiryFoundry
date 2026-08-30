@@ -239,6 +239,12 @@ def test_second_opinion_targets_exactly_the_singles(tmp_path):
     so = cycle.select_batch(store, 99, "second-opinion")
     assert [q["question_id"] for q in so] == [q0]
     assert cycle.select_batch(store, 99, "fresh") == []
+    # An unreviewed in-flight prediction takes the question out of scope --
+    # without this, decoupled rounds re-select the same head every batch.
+    a0 = [a for a in store.load_answers() if a["question_id"] == q0][0]
+    pend = dict(a0, answer_id="ANS-XX-100", status="SCORED")
+    store.write_answer(pend)
+    assert cycle.select_batch(store, 99, "second-opinion") == []
 
 
 def test_schema_rejects_thin_and_novel(tmp_path):
