@@ -37,7 +37,7 @@ def main() -> int:
         if name == "select":
             p.add_argument("--n", type=int, default=6)
             p.add_argument("--mode", default="fresh",
-                           choices=("fresh", "second-opinion"))
+                           choices=("fresh", "second-opinion", "contested"))
         if name == "run":
             p.add_argument("--lwars", required=True)
         if name == "review-run":

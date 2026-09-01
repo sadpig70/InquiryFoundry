@@ -66,6 +66,23 @@ def select_batch(store: IfaStore, n: int = 6, mode: str = "fresh") -> list[dict]
         singles = {qid for qid, c in reg_count.items() if c == 1} - pending
         quant = [q for q in adopted
                  if q["question_id"] in singles and has_quant_reject_if(q)]
+    elif mode == "contested":
+        # Requalification exam material once the coverage walk is done: the
+        # questions whose registered predictions split. A candidate's take on
+        # a contested question is worth more than one more voice in a chorus,
+        # and the same run doubles as tie-breaking for the priorities map.
+        by_q: dict[str, list] = {}
+        pending2: set[str] = set()
+        for a in answers:
+            if a["status"] == "REGISTERED":
+                by_q.setdefault(a["question_id"], []).append(
+                    a["prediction"].get("direction"))
+            elif a["status"] in ("DRAFT", "SCORED"):
+                pending2.add(a["question_id"])
+        contested = {qid for qid, dirs in by_q.items()
+                     if len(dirs) > 1 and len(set(dirs)) > 1} - pending2
+        quant = [q for q in adopted
+                 if q["question_id"] in contested and has_quant_reject_if(q)]
     else:
         done = {a["question_id"] for a in answers}
         quant = [q for q in adopted
