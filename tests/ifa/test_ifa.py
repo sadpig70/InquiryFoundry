@@ -247,6 +247,62 @@ def test_second_opinion_targets_exactly_the_singles(tmp_path):
     assert cycle.select_batch(store, 99, "second-opinion") == []
 
 
+def test_run_id_reuse_is_refused(tmp_path):
+    """A reused run id reuses its task ids and jail; a stale outbox from the
+    id's first life then satisfies collection for work nobody did."""
+    store, run_id, report = run_full(tmp_path)
+    assert report["status"] == "predicted"
+    with pytest.raises(SystemExit):
+        cycle.run_predict_round(store, run_id, ["LWAR1", "LWAR2"], runner=lambda a: {})
+
+
+def test_assignment_records_slot_holders(tmp_path):
+    """The scoreboard needed manual run-era surgery four times because slots
+    recycle; the assignment now records who held the slot at run time, with a
+    fail-safe empty record when the registry is unreadable."""
+    import json as _json
+    reg = tmp_path / "registry.json"
+    reg.write_text(_json.dumps({"slots": {
+        "LWAR1": {"instance_id": "lwar-instance-aaa11111", 
+                  "profile": {"vendor_family": "google"}},
+        "LWAR2": {"instance_id": "lwar-instance-bbb22222",
+                  "profile": {"vendor_family": "xai"}},
+        "LWAR4": {"instance_id": "lwar-instance-ccc33333",
+                  "profile": {"vendor_family": "openai"}},
+    }}), encoding="utf-8")
+    assert cycle._author_identity("LWAR2", reg)["vendor_family"] == "xai"
+    assert cycle._author_identity("LWAR9", reg) == {}          # unknown slot
+    assert cycle._author_identity("LWAR2", tmp_path / "no.json") == {}  # no file
+
+
+def test_anchors_measure_drift_without_touching_the_store(tmp_path):
+    """Anchors are smuggled past the reviewer under real-looking ids; their
+    verdicts feed a drift report and never reach the answer store."""
+    store, run_id, report = run_full(tmp_path)
+    answers = store.load_answers(run_id)
+    outbox = [{"answer_id": a["answer_id"], "decision": "register",
+               "reason": "ok"} for a in answers]
+    cycle.fold_review(store, run_id, outbox, "Stub")
+    cycle.ratify(store, run_id, "Stub", delegated=True)
+    cycle.close_run(store, run_id)
+
+    # Second run over the same store: the packet now carries anchors.
+    run2 = "RUN-IFA-T2"
+    packet = cycle.review_packet(store, run2)
+    known = {a["answer_id"] for a in store.load_answers(run2)}
+    aliases = [c["answer_id"] for c in packet["cases"] if c["answer_id"] not in known]
+    assert aliases, "closed answers exist, so anchors must be injected"
+    # Judge every anchor the opposite way: drift must read 1.0.
+    outbox2 = [{"answer_id": al, "decision": "discard", "reason": "flip"}
+               for al in aliases]
+    doc = cycle.fold_review(store, run2, outbox2, "Stub")
+    rep = doc["anchor_report"]
+    assert rep["judged"] == len(aliases) and rep["drift"] == 1.0
+    assert doc["decisions"] == []                  # anchors fold into no decision
+    originals = {a["answer_id"]: a["status"] for a in store.load_answers(run_id)}
+    assert all(v == "REGISTERED" for v in originals.values())  # store untouched
+
+
 def test_schema_rejects_thin_and_novel(tmp_path):
     with pytest.raises(SchemaError):
         validate_predict_outbox([dict(good_prediction("Q-1"), rationale="short")], {"Q-1"})

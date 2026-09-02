@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
+import random
 import secrets
 from pathlib import Path
 
@@ -28,6 +30,25 @@ from .store import IfaStore, atomic_write_yaml, load_yaml, now_iso
 
 QUESTION_FIELDS = ("question_id", "question", "why_matters", "assumptions",
                    "falsifier", "minimal_test", "action_plan", "evidence")
+
+
+def _author_identity(lwar_id: str, registry_path=None) -> dict:
+    """vendor_family + instance_id for a slot, read at run time.
+
+    Slots get recycled across generations -- LWAR2 has been Grok and GLM,
+    LWAR6 Kimi and Grok -- and every scoreboard keyed on slot id needed a
+    manual run-era separation, four times. Recording who actually held the
+    slot when the run happened makes the ledger self-describing. Fail-safe:
+    an unreadable registry records nothing rather than blocking the run.
+    """
+    path = Path(registry_path or ".pao/var/registry/lwar_registry.json")
+    try:
+        reg = json.loads(path.read_text(encoding="utf-8"))
+        slot = reg["slots"][lwar_id]
+        return {"vendor_family": (slot.get("profile") or {}).get("vendor_family"),
+                "instance_id": slot.get("instance_id")}
+    except (OSError, KeyError, ValueError):
+        return {}
 
 
 def _mint_anon(nonce: bytes, key: str) -> str:
@@ -104,12 +125,20 @@ def _question_view(q: dict) -> dict:
 
 
 def run_predict_round(store: IfaStore, run_id: str, lwars: list[str],
-                      *, runner=None) -> dict:
+                      *, runner=None, registry_path=None) -> dict:
     run_dir = store.run_dir(run_id)
     batch_p = run_dir / "batch.yaml"
     batch = load_yaml(batch_p)
     if not batch:
         raise SystemExit(f"no batch at {batch_p}; run select first")
+    # A reused run_id reuses its deterministic task ids and its jail, and a
+    # stale outbox from the id's first life then satisfies collection for
+    # work nobody did (observed when a driver restarted its numbering).
+    jail_root = run_dir / "jail"
+    if jail_root.exists() and any(f.is_file() for f in jail_root.rglob("*")):
+        raise SystemExit(
+            f"{run_id}: jail already holds artifacts -- run ids must not be "
+            f"reused; pick a fresh run id")
     qids = {q["question_id"] for q in batch}
     nonce = secrets.token_bytes(32)
     (run_dir / "run_nonce").write_bytes(nonce)
@@ -149,6 +178,8 @@ def run_predict_round(store: IfaStore, run_id: str, lwars: list[str],
     atomic_write_yaml(run_dir / "assignment.yaml", {
         "rotation": rotation,
         "anon_authors": {aid: v["author"] for aid, v in anon.items()},
+        # Who actually held each slot at run time (slot ids get recycled).
+        "authors": {lid: _author_identity(lid, registry_path) for lid in authors},
     })
 
     def _anon_view(aid: str) -> dict:
@@ -235,20 +266,66 @@ def run_predict_round(store: IfaStore, run_id: str, lwars: list[str],
 
 # ---------------- review / ratify / close ----------------
 
+ANCHORS_PER_REVIEW = 3
+
+
+def pick_anchors(store: IfaStore, run_id: str, k: int = ANCHORS_PER_REVIEW) -> list[dict]:
+    """Previously-decided cases to smuggle into a review, for drift measurement.
+
+    The same reviewer registered the same vendor's work at 62.5 percent one
+    day and 87.1 the next -- a 24.6-point calibration drift that took a
+    dedicated mixed-vendor walk to expose after the fact. Re-judging a few
+    already-decided cases inside every review measures it in real time
+    instead: the anchors' original verdicts are the baseline, and how many
+    flip is the drift. Deterministic per run_id so a rerun picks the same set.
+    """
+    pool = [a for a in store.load_answers()
+            if a["run_id"] != run_id and a.get("review")
+            and a["status"] in ("REGISTERED", "DISCARDED")]
+    if not pool:
+        return []
+    rnd = random.Random(run_id)
+    regs = [a for a in pool if a["status"] == "REGISTERED"]
+    disc = [a for a in pool if a["status"] == "DISCARDED"]
+    picks = rnd.sample(regs, min(2, len(regs))) if regs else []
+    if disc:
+        picks += rnd.sample(disc, min(k - len(picks), len(disc)))
+    return picks
+
+
+def _anchor_alias(run_id: str, answer_id: str) -> str:
+    """An id shaped like a real one, so the reviewer cannot tell an anchor."""
+    h = hashlib.sha256(f"{run_id}:{answer_id}".encode()).hexdigest()[:10]
+    return f"ANS-{h}"
+
+
 def review_packet(store: IfaStore, run_id: str) -> dict:
     """Provenance-free: no vendor, no machine scores (inherited stance)."""
     answers = store.load_answers(run_id)
-    items = []
-    for a in answers:
-        items.append({
-            "answer_id": a["answer_id"],
+
+    def _case(a, alias=None):
+        return {
+            "answer_id": alias or a["answer_id"],
             "question_id": a["question_id"],
             "prediction": {k: a["prediction"][k] for k in
                            ("direction", "prediction", "rationale",
                             "confidence", "kill_condition", "evidence")
                            if k in a["prediction"]},
             "rebuttals": a.get("rebuttals") or [],
-        })
+        }
+
+    items = [_case(a) for a in answers]
+    anchors = pick_anchors(store, run_id)
+    anchor_map = {}
+    for a in anchors:
+        alias = _anchor_alias(run_id, a["answer_id"])
+        anchor_map[alias] = {"answer_id": a["answer_id"],
+                             "original": "register" if a["status"] == "REGISTERED"
+                             else "discard"}
+        items.append(_case(a, alias))
+    if anchor_map:
+        atomic_write_yaml(store.run_dir(run_id) / "anchors.yaml", anchor_map)
+        random.Random(run_id).shuffle(items)   # anchors must not sit at the end
     return {"contract": roles.REVIEW, "run_id": run_id, "cases": items}
 
 
@@ -257,10 +334,22 @@ def fold_review(store: IfaStore, run_id: str, outbox_doc, recommended_by: str) -
     if not isinstance(outbox_doc, list) or not outbox_doc:
         raise SchemaError("review outbox must be a non-empty list")
     known = {a["answer_id"] for a in store.load_answers(run_id)}
+    anchor_map = load_yaml(run_dir / "anchors.yaml") or {}
+    anchor_report = {"n": len(anchor_map), "judged": 0, "flipped": 0, "details": []}
     decisions = []
     for d in outbox_doc:
-        if d.get("answer_id") not in known:
-            raise SchemaError(f"unknown answer_id {d.get('answer_id')}")
+        aid = d.get("answer_id")
+        if aid in anchor_map:
+            ref = anchor_map[aid]
+            flipped = d.get("decision") != ref["original"]
+            anchor_report["judged"] += 1
+            anchor_report["flipped"] += int(flipped)
+            anchor_report["details"].append(
+                {"original": ref["original"], "now": d.get("decision"),
+                 "flipped": flipped})
+            continue                       # an anchor never touches the store
+        if aid not in known:
+            raise SchemaError(f"unknown answer_id {aid}")
         if d.get("decision") not in ("register", "discard"):
             raise SchemaError("decision must be register|discard")
         if not str(d.get("reason") or "").strip():
@@ -270,6 +359,11 @@ def fold_review(store: IfaStore, run_id: str, outbox_doc, recommended_by: str) -
     doc = {"run_id": run_id, "recommended_by": recommended_by,
            "reviewer": "",                       # a machine cannot fill this
            "decisions": decisions}
+    if anchor_report["n"]:
+        anchor_report["drift"] = (round(anchor_report["flipped"] /
+                                        anchor_report["judged"], 2)
+                                  if anchor_report["judged"] else None)
+        doc["anchor_report"] = anchor_report
     atomic_write_yaml(run_dir / "review.yaml", doc)
     return doc
 
@@ -341,7 +435,12 @@ def vendor_scores(store: IfaStore) -> dict[str, dict]:
         author = (asg.get("anon_authors") or {}).get(a.get("anon_id"))
         if not author:
             continue
-        row = out.setdefault(author, {"registered": 0, "discarded": 0, "other": 0})
+        # Key on who held the slot, not on the slot: four scoreboards in a
+        # row needed manual run-era surgery because slot numbers recycle.
+        ident = (asg.get("authors") or {}).get(author) or {}
+        fam, inst = ident.get("vendor_family"), ident.get("instance_id") or ""
+        key = "%s:%s" % (fam, inst[-8:]) if fam and inst else "%s (legacy-slot)" % author
+        row = out.setdefault(key, {"registered": 0, "discarded": 0, "other": 0})
         key = {"REGISTERED": "registered", "DISCARDED": "discarded"}.get(a["status"], "other")
         row[key] += 1
     for row in out.values():

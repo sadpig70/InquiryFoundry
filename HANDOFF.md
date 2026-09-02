@@ -453,6 +453,7 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 | 7.51 Grok 재자격 (tuned) | 현행 | **쟁점 세트 96.7% — 동일런 1위.** 깊은 split 27→12 |
 | 7.52 전원 은퇴 · 버스 클리어 | 현행 | 슬롯 0. **가드 교착 발견**(expire×retire) — 수정 안건 |
 | 7.53 3사 동거 시험 | 현행 | **서열 뒤집힘 = 세션 변동 지배.** 일관성: Codex>DeepSeek>Grok |
+| 7.54 개선 1~4 구현 | 현행 | instance 성적·앵커 드리프트·tools 승격·재사용 가드 |
 
 **규칙 하나.** 어떤 절의 결론이 뒤집히면 **그 절 안에 정정을 쓰고 이 표를 갱신한다.**
 지우지 않는다 — 틀린 판단이 어떻게 나왔는지가 §7 의 값어치다.
@@ -2944,6 +2945,30 @@ Codex·Grok(tuned)·DeepSeek + Fable(리뷰어) 4세션이 빈 판에서 등록�
 쟁점 30건에 3사 캐스팅 보트 90표 추가. 슬롯 재사용 함정은 이번에도 발생
 (LWAR1 = 구 Antigravity + 신 Grok, LWAR4 = 구·신 Codex 합산 — 후자는 같은 벤더라
 합산이 정당한 유일한 사례). 원 성적표는 런 집합 분리 교정 필수(§7.48 절차).
+
+## 7.54 운영 회고의 개선 1~4번 구현 (2026-09-02)
+
+§7.53 뒤 운영 회고에서 보고한 반복 오류·비효율 중 상위 4건을 구현했다.
+
+1. **instance 기준 성적 기록** (슬롯 재사용 함정, 4회 재발) — `assignment.yaml` 에
+   `authors: {slot: {vendor_family, instance_id}}` 를 런 시점에 기록(registry 읽기,
+   fail-safe). `vendor_scores` 는 이제 `family:instance말단8` 로 키한다. 과거 런은
+   `(legacy-slot)` 표기로 구분 — **앞으로의 런은 런-집합 수동 교정이 불필요하다.**
+2. **리뷰 앵커 케이스** (캘리브레이션 드리프트 +24.6pt 실측) — 매 리뷰 패킷에
+   이미 판정된 케이스 2~3건을 실제와 구분 불가능한 가짜 id 로 섞는다
+   (`pick_anchors`, run_id 결정론). `fold_review` 가 앵커 판정을 분리해
+   `anchor_report {n, judged, flipped, drift}` 로 기록 — **저장소는 건드리지 않고**
+   원판정과의 뒤집힘 비율이 곧 실시간 드리프트다. 다음 리뷰부터 자동 측정.
+3. **드라이버 tools/ 승격** — `tools/ifa_walk.py`. 스크래치 소멸 위험 제거.
+   경로 자립(파일 기준), `PAO_OA_ID` 환경변수 필수(하드코딩 제거), 후보·리뷰어
+   전부 vendor family 동적 탐색, 앵커 드리프트 출력 포함.
+4. **run_id 재사용 가드** (stale outbox 충돌, 2회) — `run_predict_round` 가
+   jail 에 산출물이 있는 run_id 를 거부한다. 번호를 이어 셀 필요가 규율이 아니라
+   기계가 됐다.
+
+테스트 12건(+3): 재사용 거부 · identity 기록/fail-safe · 앵커 드리프트(전부 뒤집으면
+1.0, 저장소 무변경, decisions 미오염). 미구현 잔여: expire-controls 탈출구(5번,
+pao_runtime 승인 대기) · outgoing 자동 archive · needs_operator 정지 구분(6번).
 
 ---
 
