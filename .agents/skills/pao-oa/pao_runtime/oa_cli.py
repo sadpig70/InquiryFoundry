@@ -1099,6 +1099,7 @@ def command_recover(args: argparse.Namespace) -> int:
             args.generation,
             args.control_older_than,
             args.reason,
+            abandoned_task_id=args.abandoned_task_id,
         )
         event = "pending_controls_expired" if outcome["accepted"] else "pending_control_expiry_rejected"
         audit.record(
@@ -1452,6 +1453,22 @@ def command_status(args: argparse.Namespace) -> int:
         age = state["heartbeat_age_s"]
         return _holds_claim(state) and (age is None or age <= args.busy_grace)
 
+    def _reading(state: dict) -> str:
+        # A stale slot is not one condition. The frozen heartbeat's last word
+        # separates the recurring cases well enough to stop the diagnosis
+        # round-trips: a watcher that last wrote `control` handled a control
+        # (typically the shutdown that stopped it) and is an intentional
+        # stop; one frozen at `watching` had its park lapse (the
+        # turn-consumption pattern); a held claim is a death mid-task.
+        if _holds_claim(state):
+            return "died_holding_claim"
+        last = ((state["heartbeat"] or {}).get("status") or "")
+        if last == "control":
+            return "handled_control_then_stopped"
+        if last == "watching":
+            return "lapsed_while_watching"
+        return "unknown"
+
     needs_operator = [
         {
             "lwar_id": s["lwar_id"],
@@ -1459,6 +1476,7 @@ def command_status(args: argparse.Namespace) -> int:
             "runtime_status": s["runtime_status"],
             "heartbeat_age_s": s["heartbeat_age_s"],
             "held_task_id": (s["heartbeat"] or {}).get("current_task_id"),
+            "reading": _reading(s),
         }
         for s in states
         if s["state"] == "on"

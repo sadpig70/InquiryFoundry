@@ -239,12 +239,32 @@ class RegistryService:
                     "active_work": {},
                 }
 
+            # Submitted results are the one queue whose "activity" is an
+            # artifact: they are already-delivered duplicates waiting for an
+            # archive sweep, and forgetting `collect --archive` before
+            # retirement was the runbook's most-hit trap (five manual
+            # retirements in a row began by tripping on it). Archive them
+            # here, bytes unchanged, and let the real guards -- incoming,
+            # claims, leases, controls -- keep their teeth.
+            outgoing_dir = self.root / "mailbox" / lwar_id / "outgoing"
+            archived_outgoing = []
+            archive_dir = self.root / "mailbox" / lwar_id / "archive" / "results"
+            for path in sorted(outgoing_dir.glob("*.json")):
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                target = archive_dir / path.name
+                if not target.exists():
+                    path.rename(target)
+                    archived_outgoing.append(path.name)
+                else:
+                    path.unlink()
+                    archived_outgoing.append(path.name + " (duplicate)")
             active_work = self._active_mailbox_work(lwar_id)
             if active_work:
                 return {
                     "accepted": False,
                     "reason": "active_mailbox_work",
                     "stale_confirmed": stale_confirmed,
+                    "outgoing_archived": archived_outgoing,
                     "heartbeat_age_s": age_s,
                     "registry_version": registry["registry_version"],
                     "active_work": active_work,
@@ -273,6 +293,7 @@ class RegistryService:
             atomic_write_json(self.registry_path, registry)
             return {
                 "accepted": True,
+                "outgoing_archived": archived_outgoing,
                 "reason": None,
                 "stale_confirmed": True,
                 "heartbeat_age_s": age_s,
@@ -449,6 +470,7 @@ class RegistryService:
         older_than_s: float,
         reason: str,
         now: datetime | None = None,
+        abandoned_task_id: str | None = None,
     ) -> dict[str, Any]:
         """Expire controls left undeliverable in front of a dead watcher.
 
@@ -501,14 +523,28 @@ class RegistryService:
                 # sits at `running` with a frozen `last_seen` for the whole task.
                 # Expiring on age alone would silently drop the controls its next
                 # slice is about to claim.
+                # The abandoned-task escape, mirroring retire_stale's: a
+                # watcher that died mid-task freezes at `running` forever, and
+                # without this the busy fence and retire_stale's mailbox check
+                # deadlock each other -- expire refuses while the heartbeat
+                # says running, retire refuses while the control sits queued
+                # (observed 2026-09-02, resolved then by a documented
+                # deviation). The caller must name the exact task the dead
+                # watcher froze on; a merely idle-looking mismatch stays fenced.
+                held_task_id = heartbeat.get("current_task_id")
+                abandon_ok = bool(
+                    abandoned_task_id is not None
+                    and held_task_id is not None
+                    and held_task_id == abandoned_task_id
+                )
                 if (
                     heartbeat.get("status") == "running"
-                    or heartbeat.get("current_task_id") is not None
-                ):
+                    or held_task_id is not None
+                ) and not abandon_ok:
                     return {
                         "accepted": False,
                         "reason": "watcher_busy",
-                        "current_task_id": heartbeat.get("current_task_id"),
+                        "current_task_id": held_task_id,
                         "expired": [],
                     }
                 try:

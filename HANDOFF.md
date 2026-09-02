@@ -454,6 +454,7 @@ live1/live2 는 `_workspace/if_autorun.py` 등 **금지 목록에 오른 우회 
 | 7.52 전원 은퇴 · 버스 클리어 | 현행 | 슬롯 0. **가드 교착 발견**(expire×retire) — 수정 안건 |
 | 7.53 3사 동거 시험 | 현행 | **서열 뒤집힘 = 세션 변동 지배.** 일관성: Codex>DeepSeek>Grok |
 | 7.54 개선 1~4 구현 | 현행 | instance 성적·앵커 드리프트·tools 승격·재사용 가드 |
+| 7.55 개선 5·6 구현 | 현행 | **교착 공식 해소** · retire 자동 archive · 정지 판독 필드 |
 
 **규칙 하나.** 어떤 절의 결론이 뒤집히면 **그 절 안에 정정을 쓰고 이 표를 갱신한다.**
 지우지 않는다 — 틀린 판단이 어떻게 나왔는지가 §7 의 값어치다.
@@ -2969,6 +2970,26 @@ Codex·Grok(tuned)·DeepSeek + Fable(리뷰어) 4세션이 빈 판에서 등록�
 테스트 12건(+3): 재사용 거부 · identity 기록/fail-safe · 앵커 드리프트(전부 뒤집으면
 1.0, 저장소 무변경, decisions 미오염). 미구현 잔여: expire-controls 탈출구(5번,
 pao_runtime 승인 대기) · outgoing 자동 archive · needs_operator 정지 구분(6번).
+
+## 7.55 회고 5·6번 구현 — 가드 교착 해소, 은퇴 함정 기계화, 정지 판독 (2026-09-02)
+
+pao_runtime 수정 승인에 따라 잔여 개선 3건을 구현했다. 스크래치 버스에 어제의
+교착 상태를 그대로 재현해 실명령으로 8/8 검증. 양쪽 사본(pao-oa/pao-lwar) 동기화.
+
+1. **`expire-controls --abandoned-task-id`** (§7.52 교착 해소) — retire 와 같은
+   탈출구 의미론: 죽은 watcher 가 동결된 **정확한 task id** 를 대야만 busy fence 를
+   통과한다. 틀린 id·id 없음은 여전히 거부(fence 보존 검증됨). 이제
+   "작업 중 사망 + control 대기" 는 `expire(--abandoned) → retire(--abandoned)`
+   공식 2단계로 풀린다 — §7.52 의 문서화된 이탈이 재발할 이유가 사라졌다.
+2. **retire 가 outgoing 을 자동 archive** — 제출된 결과는 활동이 아니라 잔재다.
+   `retire-stale` 이 heartbeat 확정 후·mailbox 검사 전에 outgoing 을
+   `archive/results/` 로 옮기고(바이트 보존) `outgoing_archived` 로 기록한다.
+   진짜 가드(incoming·claims·leases·controls)는 이빨 그대로. 런북의 최다 함정
+   ("collect --archive 를 잊음")이 규율에서 기계가 됐다.
+3. **`needs_operator.reading`** — 동결 heartbeat 의 마지막 상태로 반복 사례를 가른다:
+   `handled_control_then_stopped`(의도된 정지) · `lapsed_while_watching`(파킹 이탈) ·
+   `died_holding_claim`(작업 중 사망) · `unknown`. §7.24 부터 끌어온
+   "정상 정지와 사망이 똑같이 보인다" 가 필드 하나로 진단된다.
 
 ---
 
